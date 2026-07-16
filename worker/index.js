@@ -83,14 +83,12 @@ export default {
 
 // ---------- Produto / Estoque ----------
 
-// Busca e normaliza os dados de um produto na API da Mersan. Usada tanto
-// pelo endpoint JSON (/api/produto) quanto pela página do produto, que
-// precisa desses dados para montar as meta tags de compartilhamento.
-async function buscarDadosProdutoMersan(termo) {
+async function buscarDadosProdutoMersan(termo, signal) {
   const mersanUrl = `${MERSAN_BASE}/buscapreco/${encodeURIComponent(termo)}/${LOJA}`
 
   const resp = await fetch(mersanUrl, {
-    headers: { Accept: 'application/json' }
+    headers: { Accept: 'application/json' },
+    signal
   })
 
   if (!resp.ok) {
@@ -213,13 +211,7 @@ async function handleEstoque(request, url, ctx) {
   return response
 }
 
-// ---------- Página do produto com Open Graph dinâmico (Etapa 4) ----------
-//
-// O WhatsApp (e Facebook, etc.) não executa JavaScript ao gerar a prévia de
-// um link — ele só lê o HTML bruto. Por isso, para a prévia mostrar a foto
-// e o nome certos de cada produto, o próprio servidor (aqui) precisa
-// devolver o HTML já com as meta tags corretas, antes do React assumir a
-// tela no navegador da pessoa.
+// ---------- Página do produto com Open Graph dinâmico ----------
 
 async function handleProdutoPage(request, url, env) {
   const codigo = decodeURIComponent(url.pathname.replace('/produto/', ''))
@@ -279,7 +271,7 @@ function escapeHtml(str) {
     .replaceAll("'", '&#39;')
 }
 
-// ---------- Fotos (Etapa 3) ----------
+// ---------- Fotos ----------
 
 function normalizarCodigo(codigo) {
   return codigo.trim().replace(/\s+/g, '_')
@@ -374,7 +366,7 @@ async function handleAdminListarFotos(request, env) {
   return jsonResponse({ fotos, truncado: !listagem.list_complete })
 }
 
-// ---------- Vitrine pública (lista de fotos, sem senha) ----------
+// ---------- Vitrine pública ----------
 
 async function handleFotosPublicas(env) {
   const listagem = await env.FOTOS.list({ limit: 200 })
@@ -479,40 +471,53 @@ async function handleIrVendedor(request, url, env) {
     return new Response('Vendedor não encontrado.', { status: 404 })
   }
 
-  let nomeProduto = codigo
-  let preco = null
   try {
-    const dados = await buscarDadosProdutoMersan(codigo)
-    nomeProduto = dados.nome
-    preco = dados.preco
-  } catch {
-    // Sem dados do produto: usa o código mesmo assim, não trava o link.
-  }
+    let nomeProduto = codigo
+    let preco = null
+    try {
+      const controlador = new AbortController()
+      const tempoLimite = setTimeout(() => controlador.abort(), 4000)
 
-  const linkProduto = `${url.origin}/produto/${encodeURIComponent(codigo)}`
+      const dados = await buscarDadosProdutoMersan(codigo, controlador.signal)
+      clearTimeout(tempoLimite)
 
-  const linhas = [
-    'Olá! Tenho interesse neste produto da Mersan Calçados:',
-    nomeProduto
-  ]
-
-  if (tamanho) linhas.push(`Tamanho: ${tamanho}`)
-
-  if (preco != null) {
-    if (parcelas > 1) {
-      const valorParcela = (preco / parcelas).toFixed(2).replace('.', ',')
-      linhas.push(`Parcelamento: ${parcelas}x de R$ ${valorParcela} (parcela mínima R$ 25)`)
-    } else {
-      linhas.push(`Valor: R$ ${preco.toFixed(2).replace('.', ',')}`)
+      nomeProduto = dados.nome
+      preco = dados.preco
+    } catch {
+      // Sem dados do produto (demorou, ou deu erro): usa o código mesmo
+      // assim, não trava o link.
     }
+
+    const linkProduto = `${url.origin}/produto/${encodeURIComponent(codigo)}`
+
+    const linhas = [
+      'Olá! Tenho interesse neste produto da Mersan Calçados:',
+      nomeProduto
+    ]
+
+    if (tamanho) linhas.push(`Tamanho: ${tamanho}`)
+
+    if (preco != null) {
+      if (parcelas > 1) {
+        const valorParcela = (preco / parcelas).toFixed(2).replace('.', ',')
+        linhas.push(`Parcelamento: ${parcelas}x de R$ ${valorParcela} (parcela mínima R$ 29,99)`)
+      } else {
+        linhas.push(`Valor: R$ ${preco.toFixed(2).replace('.', ',')}`)
+      }
+    }
+
+    linhas.push(linkProduto)
+
+    const mensagem = linhas.join('\n')
+    const linkWhatsApp = `https://wa.me/${vendedor.whatsapp}?text=${encodeURIComponent(mensagem)}`
+
+    return Response.redirect(linkWhatsApp, 302)
+  } catch {
+    const linkProduto = `${url.origin}/produto/${encodeURIComponent(codigo)}`
+    const mensagemSimples = `Olá! Tenho interesse neste produto da Mersan Calçados:\n${linkProduto}`
+    const linkFallback = `https://wa.me/${vendedor.whatsapp}?text=${encodeURIComponent(mensagemSimples)}`
+    return Response.redirect(linkFallback, 302)
   }
-
-  linhas.push(linkProduto)
-
-  const mensagem = linhas.join('\n')
-  const linkWhatsApp = `https://wa.me/${vendedor.whatsapp}?text=${encodeURIComponent(mensagem)}`
-
-  return Response.redirect(linkWhatsApp, 302)
 }
 
 // ---------- Utilitário ----------
@@ -526,4 +531,4 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
       ...extraHeaders
     }
   })
-                                  }
+}
