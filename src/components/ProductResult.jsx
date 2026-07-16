@@ -1,6 +1,6 @@
 const IMAGEM_PADRAO = '/icons/icon-512.svg' // trocado pelo sistema próprio de fotos na Etapa 3
 
-export default function ProductResult({ produto }) {
+export default function ProductResult({ produto, ocultarEstoque = false }) {
   const { nome, referencia, cor, preco, foto, estoque, loja } = produto
 
   const semEstoque = !estoque || estoque.length === 0
@@ -28,20 +28,22 @@ export default function ProductResult({ produto }) {
         )}
       </div>
 
-      <div style={styles.estoqueBox}>
-        <h2 style={styles.estoqueTitulo}>Estoque Loja {loja}</h2>
-        {semEstoque ? (
-          <p style={styles.semEstoque}>Sem estoque nesta loja.</p>
-        ) : (
-          <ul style={styles.lista}>
-            {estoque.map((item) => (
-              <li key={item.tamanho} style={styles.item}>
-                {item.tamanho} • {item.pares} {item.pares === 1 ? 'par' : 'pares'}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {!ocultarEstoque && (
+        <div style={styles.estoqueBox}>
+          <h2 style={styles.estoqueTitulo}>Estoque Loja {loja}</h2>
+          {semEstoque ? (
+            <p style={styles.semEstoque}>Sem estoque nesta loja.</p>
+          ) : (
+            <ul style={styles.lista}>
+              {estoque.map((item) => (
+                <li key={item.tamanho} style={styles.item}>
+                  {item.tamanho} • {item.pares} {item.pares === 1 ? 'par' : 'pares'}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   )
 }
