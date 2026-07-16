@@ -4,7 +4,8 @@ import Logo from '../components/Logo.jsx'
 import ProductResult from '../components/ProductResult.jsx'
 import ApiService from '../services/api.js'
 
-const PARCELA_MINIMA = 29,99
+const PARCELA_MINIMA = 29.99
+const MAX_PARCELAS = 10
 
 export default function Produto() {
   const { codigo } = useParams()
@@ -85,7 +86,7 @@ export default function Produto() {
   }
 
   const maxParcelas = produto?.preco
-    ? Math.max(1, Math.floor(produto.preco / PARCELA_MINIMA))
+    ? Math.min(MAX_PARCELAS, Math.max(1, Math.floor(produto.preco / PARCELA_MINIMA)))
     : 1
 
   const opcoesParcelas = Array.from({ length: maxParcelas }, (_, i) => i + 1)
@@ -156,7 +157,7 @@ export default function Produto() {
                     </button>
                   ))}
                 </div>
-                <p style={styles.dicaPequena}>Parcela mínima: R$ 25</p>
+                <p style={styles.dicaPequena}>Parcela mínima: R$ 29,99 • até 10x</p>
               </div>
             )}
 
@@ -322,4 +323,4 @@ const styles = {
     textAlign: 'center',
     textDecoration: 'none'
   }
-                                        }
+}
