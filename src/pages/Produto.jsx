@@ -4,7 +4,7 @@ import Logo from '../components/Logo.jsx'
 import ProductResult from '../components/ProductResult.jsx'
 import ApiService from '../services/api.js'
 
-const PARCELA_MINIMA = 25
+const PARCELA_MINIMA = 29,99
 
 export default function Produto() {
   const { codigo } = useParams()
@@ -16,8 +16,7 @@ export default function Produto() {
 
   const [vendedores, setVendedores] = useState([])
   const [tamanhoEscolhido, setTamanhoEscolhido] = useState(null)
-  const [parcelasEscolhidas, setParcelasEscolhidas] = useState(1)
-  const [vendedorEscolhido, setVendedorEscolhido] = useState(null)
+  const [parcelasEscolhidas, setParcelasEscolhidas] = useState(null)
 
   useEffect(() => {
     let cancelado = false
@@ -26,8 +25,7 @@ export default function Produto() {
     setError(null)
     setProduto(null)
     setTamanhoEscolhido(null)
-    setParcelasEscolhidas(1)
-    setVendedorEscolhido(null)
+    setParcelasEscolhidas(null)
 
     ApiService.buscarProduto(codigo)
       .then((data) => {
@@ -92,11 +90,9 @@ export default function Produto() {
 
   const opcoesParcelas = Array.from({ length: maxParcelas }, (_, i) => i + 1)
 
-  const podeEnviarPedido = Boolean(tamanhoEscolhido && vendedorEscolhido)
-
-  function linkPedido() {
+  function linkPedido(vendedorId) {
     const params = new URLSearchParams({
-      vendedor: vendedorEscolhido,
+      vendedor: vendedorId,
       codigo,
       tamanho: tamanhoEscolhido,
       parcelas: String(parcelasEscolhidas)
@@ -114,16 +110,19 @@ export default function Produto() {
 
         {produto && (
           <>
-            <ProductResult produto={produto} />
+            <ProductResult produto={produto} ocultarEstoque />
 
-            {produto.estoque?.length > 0 && (
+            {produto.estoque?.length > 0 ? (
               <div style={styles.secao}>
-                <h2 style={styles.secaoTitulo}>Escolha o tamanho</h2>
+                <h2 style={styles.secaoTitulo}>1. Escolha o tamanho</h2>
                 <div style={styles.opcoes}>
                   {produto.estoque.map((item) => (
                     <button
                       key={item.tamanho}
-                      onClick={() => setTamanhoEscolhido(item.tamanho)}
+                      onClick={() => {
+                        setTamanhoEscolhido(item.tamanho)
+                        setParcelasEscolhidas(null)
+                      }}
                       style={
                         tamanhoEscolhido === item.tamanho
                           ? styles.opcaoSelecionada
@@ -135,59 +134,50 @@ export default function Produto() {
                   ))}
                 </div>
               </div>
+            ) : (
+              <p style={styles.dica}>Sem tamanhos disponíveis nesta loja no momento.</p>
             )}
 
-            {produto.preco != null && (
+            {tamanhoEscolhido && produto.preco != null && (
               <div style={styles.secao}>
-                <h2 style={styles.secaoTitulo}>Parcelamento (parcela mínima R$ 25)</h2>
-                <select
-                  value={parcelasEscolhidas}
-                  onChange={(e) => setParcelasEscolhidas(Number(e.target.value))}
-                  style={styles.select}
-                >
-                  {opcoesParcelas.map((n) => (
-                    <option key={n} value={n}>
-                      {n === 1
-                        ? `À vista — R$ ${produto.preco.toFixed(2).replace('.', ',')}`
-                        : `${n}x de R$ ${(produto.preco / n).toFixed(2).replace('.', ',')}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {vendedores.length > 0 && (
-              <div style={styles.secao}>
-                <h2 style={styles.secaoTitulo}>Escolha o vendedor</h2>
+                <h2 style={styles.secaoTitulo}>2. Escolha o parcelamento</h2>
                 <div style={styles.opcoes}>
-                  {vendedores.map((v) => (
+                  {opcoesParcelas.map((n) => (
                     <button
-                      key={v.id}
-                      onClick={() => setVendedorEscolhido(v.id)}
+                      key={n}
+                      onClick={() => setParcelasEscolhidas(n)}
                       style={
-                        vendedorEscolhido === v.id
-                          ? styles.opcaoSelecionada
-                          : styles.opcao
+                        parcelasEscolhidas === n ? styles.opcaoSelecionada : styles.opcao
                       }
                     >
-                      {v.nome}
+                      {n === 1
+                        ? `À vista R$ ${produto.preco.toFixed(2).replace('.', ',')}`
+                        : `${n}x de R$ ${(produto.preco / n).toFixed(2).replace('.', ',')}`}
                     </button>
                   ))}
                 </div>
+                <p style={styles.dicaPequena}>Parcela mínima: R$ 25</p>
+              </div>
+            )}
+
+            {tamanhoEscolhido && parcelasEscolhidas && (
+              <div style={styles.secao}>
+                <h2 style={styles.secaoTitulo}>3. Escolha o vendedor</h2>
+                {vendedores.length === 0 ? (
+                  <p style={styles.dica}>Nenhum vendedor cadastrado ainda.</p>
+                ) : (
+                  <div style={styles.opcoes}>
+                    {vendedores.map((v) => (
+                      <a key={v.id} href={linkPedido(v.id)} style={styles.botaoVendedor}>
+                        {v.nome}
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
             <div style={styles.botoes}>
-              {podeEnviarPedido && (
-                <a href={linkPedido()} style={styles.botaoWhatsApp}>
-                  Enviar pedido no WhatsApp
-                </a>
-              )}
-              {!podeEnviarPedido && vendedores.length > 0 && (
-                <p style={styles.dica}>
-                  Escolha o tamanho e o vendedor para enviar o pedido.
-                </p>
-              )}
               <button onClick={handleCompartilhar} style={styles.botaoPrimario}>
                 Compartilhar
               </button>
@@ -275,17 +265,26 @@ const styles = {
     borderRadius: '999px',
     cursor: 'pointer'
   },
-  select: {
-    padding: '12px 14px',
-    fontSize: '15px',
-    borderRadius: '10px',
-    border: '1px solid #e6e6e6',
-    background: '#ffffff'
+  botaoVendedor: {
+    padding: '12px 20px',
+    fontSize: '14px',
+    fontWeight: 700,
+    color: '#ffffff',
+    background: '#25D366',
+    border: 'none',
+    borderRadius: '999px',
+    cursor: 'pointer',
+    textDecoration: 'none'
   },
   dica: {
     fontSize: '13px',
     color: '#6b6b6b',
     textAlign: 'center',
+    margin: 0
+  },
+  dicaPequena: {
+    fontSize: '12px',
+    color: '#6b6b6b',
     margin: 0
   },
   botoes: {
@@ -305,19 +304,6 @@ const styles = {
     borderRadius: '10px',
     cursor: 'pointer'
   },
-  botaoWhatsApp: {
-    padding: '14px',
-    fontSize: '15px',
-    fontWeight: 700,
-    color: '#ffffff',
-    background: '#25D366',
-    border: 'none',
-    borderRadius: '10px',
-    cursor: 'pointer',
-    textAlign: 'center',
-    textDecoration: 'none',
-    display: 'block'
-  },
   botaoSecundario: {
     padding: '14px',
     fontSize: '15px',
@@ -336,4 +322,4 @@ const styles = {
     textAlign: 'center',
     textDecoration: 'none'
   }
-    }
+                                        }
