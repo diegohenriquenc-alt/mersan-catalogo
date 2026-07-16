@@ -5,6 +5,7 @@ import App from './App.jsx'
 import Home from './pages/Home.jsx'
 import Admin from './pages/Admin.jsx'
 import Produto from './pages/Produto.jsx'
+import Catalogo from './pages/Catalogo.jsx'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -15,6 +16,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route index element={<Home />} />
           <Route path="admin" element={<Admin />} />
           <Route path="produto/:codigo" element={<Produto />} />
+          <Route path="catalogo" element={<Catalogo />} />
         </Route>
       </Routes>
     </BrowserRouter>
