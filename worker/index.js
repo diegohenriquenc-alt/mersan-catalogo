@@ -238,8 +238,8 @@ async function handleProdutoPage(request, url, env) {
       `content="${escapeHtml(descricao)}"`
     )
     .replace(
-      'content="/icons/icon-512.svg"',
-      `content="${imagemUrl}"`
+      '<meta property="og:image" content="/icons/icon-512.svg" />',
+      `<meta property="og:image" content="${imagemUrl}" />\n    <meta property="og:image:type" content="image/jpeg" />`
     )
 
   return new Response(html, {
@@ -321,7 +321,10 @@ async function handleAdminUploadFoto(request, env) {
   }
 
   await env.FOTOS.put(chave, bytes, {
-    metadata: { contentType: arquivo.type || 'image/jpeg' }
+    metadata: {
+      contentType: arquivo.type || 'image/jpeg',
+      tamanho: bytes.byteLength
+    }
   })
 
   return jsonResponse({ ok: true, codigo: chave })
@@ -349,6 +352,7 @@ async function handleAdminListarFotos(request, env) {
   const listagem = await env.FOTOS.list({ limit: 200 })
   const fotos = listagem.keys.map((k) => ({
     codigo: k.name,
+    tamanho: k.metadata?.tamanho || null,
     modificadoEm: k.metadata?.atualizadoEm || null
   }))
 
