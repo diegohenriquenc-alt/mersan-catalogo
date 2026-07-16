@@ -1,17 +1,23 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import Logo from '../components/Logo.jsx'
 import ProductResult from '../components/ProductResult.jsx'
 import ApiService from '../services/api.js'
 
+const PARCELA_MINIMA = 25
+
 export default function Produto() {
   const { codigo } = useParams()
-  const navigate = useNavigate()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [produto, setProduto] = useState(null)
   const [copiado, setCopiado] = useState(false)
+
+  const [vendedores, setVendedores] = useState([])
+  const [tamanhoEscolhido, setTamanhoEscolhido] = useState(null)
+  const [parcelasEscolhidas, setParcelasEscolhidas] = useState(1)
+  const [vendedorEscolhido, setVendedorEscolhido] = useState(null)
 
   useEffect(() => {
     let cancelado = false
@@ -19,6 +25,9 @@ export default function Produto() {
     setLoading(true)
     setError(null)
     setProduto(null)
+    setTamanhoEscolhido(null)
+    setParcelasEscolhidas(1)
+    setVendedorEscolhido(null)
 
     ApiService.buscarProduto(codigo)
       .then((data) => {
@@ -36,10 +45,20 @@ export default function Produto() {
     }
   }, [codigo])
 
+  useEffect(() => {
+    let cancelado = false
+    fetch('/api/vendedores')
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelado) setVendedores(data.vendedores || [])
+      })
+      .catch(() => {})
+    return () => {
+      cancelado = true
+    }
+  }, [])
+
   const urlProduto = typeof window !== 'undefined' ? window.location.href : ''
-  const mensagemWhatsApp = produto
-    ? `Mersan Calçados • Loja 261\n${produto.nome}\n${urlProduto}`
-    : ''
 
   async function handleCompartilhar() {
     if (navigator.share) {
@@ -63,13 +82,26 @@ export default function Produto() {
       setCopiado(true)
       setTimeout(() => setCopiado(false), 2000)
     } catch {
-      // Sem permissão de clipboard — sem problema, a pessoa pode copiar da barra de endereço.
+      // Sem permissão de clipboard — a pessoa pode copiar direto da barra de endereço.
     }
   }
 
-  function handleWhatsApp() {
-    const link = `https://wa.me/?text=${encodeURIComponent(mensagemWhatsApp)}`
-    window.open(link, '_blank')
+  const maxParcelas = produto?.preco
+    ? Math.max(1, Math.floor(produto.preco / PARCELA_MINIMA))
+    : 1
+
+  const opcoesParcelas = Array.from({ length: maxParcelas }, (_, i) => i + 1)
+
+  const podeEnviarPedido = Boolean(tamanhoEscolhido && vendedorEscolhido)
+
+  function linkPedido() {
+    const params = new URLSearchParams({
+      vendedor: vendedorEscolhido,
+      codigo,
+      tamanho: tamanhoEscolhido,
+      parcelas: String(parcelasEscolhidas)
+    })
+    return `/ir-vendedor?${params.toString()}`
   }
 
   return (
@@ -84,12 +116,80 @@ export default function Produto() {
           <>
             <ProductResult produto={produto} />
 
+            {produto.estoque?.length > 0 && (
+              <div style={styles.secao}>
+                <h2 style={styles.secaoTitulo}>Escolha o tamanho</h2>
+                <div style={styles.opcoes}>
+                  {produto.estoque.map((item) => (
+                    <button
+                      key={item.tamanho}
+                      onClick={() => setTamanhoEscolhido(item.tamanho)}
+                      style={
+                        tamanhoEscolhido === item.tamanho
+                          ? styles.opcaoSelecionada
+                          : styles.opcao
+                      }
+                    >
+                      {item.tamanho}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {produto.preco != null && (
+              <div style={styles.secao}>
+                <h2 style={styles.secaoTitulo}>Parcelamento (parcela mínima R$ 25)</h2>
+                <select
+                  value={parcelasEscolhidas}
+                  onChange={(e) => setParcelasEscolhidas(Number(e.target.value))}
+                  style={styles.select}
+                >
+                  {opcoesParcelas.map((n) => (
+                    <option key={n} value={n}>
+                      {n === 1
+                        ? `À vista — R$ ${produto.preco.toFixed(2).replace('.', ',')}`
+                        : `${n}x de R$ ${(produto.preco / n).toFixed(2).replace('.', ',')}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {vendedores.length > 0 && (
+              <div style={styles.secao}>
+                <h2 style={styles.secaoTitulo}>Escolha o vendedor</h2>
+                <div style={styles.opcoes}>
+                  {vendedores.map((v) => (
+                    <button
+                      key={v.id}
+                      onClick={() => setVendedorEscolhido(v.id)}
+                      style={
+                        vendedorEscolhido === v.id
+                          ? styles.opcaoSelecionada
+                          : styles.opcao
+                      }
+                    >
+                      {v.nome}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div style={styles.botoes}>
+              {podeEnviarPedido && (
+                <a href={linkPedido()} style={styles.botaoWhatsApp}>
+                  Enviar pedido no WhatsApp
+                </a>
+              )}
+              {!podeEnviarPedido && vendedores.length > 0 && (
+                <p style={styles.dica}>
+                  Escolha o tamanho e o vendedor para enviar o pedido.
+                </p>
+              )}
               <button onClick={handleCompartilhar} style={styles.botaoPrimario}>
                 Compartilhar
-              </button>
-              <button onClick={handleWhatsApp} style={styles.botaoWhatsApp}>
-                Enviar para WhatsApp
               </button>
               <button onClick={handleCopiarLink} style={styles.botaoSecundario}>
                 {copiado ? 'Link copiado!' : 'Copiar link'}
@@ -124,7 +224,7 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    gap: '24px'
+    gap: '20px'
   },
   status: {
     fontSize: '14px',
@@ -135,6 +235,58 @@ const styles = {
     fontSize: '14px',
     textAlign: 'center',
     maxWidth: '480px'
+  },
+  secao: {
+    width: '100%',
+    maxWidth: '480px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px'
+  },
+  secaoTitulo: {
+    fontSize: '13px',
+    fontWeight: 700,
+    letterSpacing: '0.02em',
+    color: '#111111',
+    margin: 0
+  },
+  opcoes: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px'
+  },
+  opcao: {
+    padding: '10px 16px',
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#111111',
+    background: '#f2f2f2',
+    border: '1px solid #e6e6e6',
+    borderRadius: '999px',
+    cursor: 'pointer'
+  },
+  opcaoSelecionada: {
+    padding: '10px 16px',
+    fontSize: '14px',
+    fontWeight: 700,
+    color: '#ffffff',
+    background: '#0057ff',
+    border: '1px solid #0057ff',
+    borderRadius: '999px',
+    cursor: 'pointer'
+  },
+  select: {
+    padding: '12px 14px',
+    fontSize: '15px',
+    borderRadius: '10px',
+    border: '1px solid #e6e6e6',
+    background: '#ffffff'
+  },
+  dica: {
+    fontSize: '13px',
+    color: '#6b6b6b',
+    textAlign: 'center',
+    margin: 0
   },
   botoes: {
     width: '100%',
@@ -161,7 +313,10 @@ const styles = {
     background: '#25D366',
     border: 'none',
     borderRadius: '10px',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    textAlign: 'center',
+    textDecoration: 'none',
+    display: 'block'
   },
   botaoSecundario: {
     padding: '14px',
@@ -181,4 +336,4 @@ const styles = {
     textAlign: 'center',
     textDecoration: 'none'
   }
-}
+    }
