@@ -1,6 +1,8 @@
 // Worker único do Catálogo Mersan.
 //
 // Rotas:
+//  /produto/{codigo}             -> página do produto com meta tags Open
+//                                    Graph dinâmicas (Etapa 4)
 //  /api/produto?termo=...        -> dados do produto na API da Mersan
 //  /api/estoque?referencia=...   -> estoque na loja 261
 //  /produto-foto/{codigo}        -> serve a foto do produto (armazenada no KV)
@@ -17,6 +19,10 @@ const CACHE_TTL_SECONDS = 30 * 60 // 30 minutos, conforme briefing
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url)
+
+    if (url.pathname.startsWith('/produto/')) {
+      return handleProdutoPage(request, url, env)
+    }
 
     if (url.pathname === '/api/produto') {
       return handleProduto(request, url, ctx)
@@ -51,7 +57,41 @@ export default {
   }
 }
 
-// ---------- Produto / Estoque (Etapa 2, sem alterações) ----------
+// ---------- Produto / Estoque ----------
+
+// Busca e normaliza os dados de um produto na API da Mersan. Usada tanto
+// pelo endpoint JSON (/api/produto) quanto pela página do produto, que
+// precisa desses dados para montar as meta tags de compartilhamento.
+async function buscarDadosProdutoMersan(termo) {
+  const mersanUrl = `${MERSAN_BASE}/buscapreco/${encodeURIComponent(termo)}/${LOJA}`
+
+  const resp = await fetch(mersanUrl, {
+    headers: { Accept: 'application/json' }
+  })
+
+  if (!resp.ok) {
+    throw new Error(`A API da Mersan retornou status ${resp.status}.`)
+  }
+
+  const dados = await resp.json()
+  const lista = Array.isArray(dados?.precos) ? dados.precos : []
+
+  if (lista.length === 0) {
+    throw new Error('Produto não encontrado.')
+  }
+
+  const item = lista.find((p) => p.cdEmpresa === LOJA) || lista[0]
+
+  return {
+    referencia: item.cdReferencia,
+    nome: item.dsProduto,
+    cor: item.cdCor,
+    tamanho: item.dsTamanho,
+    preco: item.vlPrecoPromocao > 0 ? item.vlPrecoPromocao : item.vlPreco,
+    codigoBarras: item.cdProduto,
+    codigoSku: item.cdSKU
+  }
+}
 
 async function handleProduto(request, url, ctx) {
   const termo = url.searchParams.get('termo')
@@ -68,45 +108,12 @@ async function handleProduto(request, url, ctx) {
     return cached
   }
 
-  const mersanUrl = `${MERSAN_BASE}/buscapreco/${encodeURIComponent(termo)}/${LOJA}`
-
-  let dados
+  let payload
   try {
-    const resp = await fetch(mersanUrl, {
-      headers: { Accept: 'application/json' }
-    })
-
-    if (!resp.ok) {
-      return jsonResponse(
-        { error: `A API da Mersan retornou status ${resp.status}.` },
-        502
-      )
-    }
-
-    dados = await resp.json()
+    payload = await buscarDadosProdutoMersan(termo)
   } catch (err) {
-    return jsonResponse(
-      { error: 'Não foi possível conectar à API da Mersan.' },
-      502
-    )
-  }
-
-  const lista = Array.isArray(dados?.precos) ? dados.precos : []
-
-  if (lista.length === 0) {
-    return jsonResponse({ error: 'Produto não encontrado.' }, 404)
-  }
-
-  const item = lista.find((p) => p.cdEmpresa === LOJA) || lista[0]
-
-  const payload = {
-    referencia: item.cdReferencia,
-    nome: item.dsProduto,
-    cor: item.cdCor,
-    tamanho: item.dsTamanho,
-    preco: item.vlPrecoPromocao > 0 ? item.vlPrecoPromocao : item.vlPreco,
-    codigoBarras: item.cdProduto,
-    codigoSku: item.cdSKU
+    const status = err.message === 'Produto não encontrado.' ? 404 : 502
+    return jsonResponse({ error: err.message }, status)
   }
 
   const response = jsonResponse(payload, 200, {
@@ -180,6 +187,76 @@ async function handleEstoque(request, url, ctx) {
   ctx.waitUntil(cache.put(cacheKey, response.clone()))
 
   return response
+}
+
+// ---------- Página do produto com Open Graph dinâmico (Etapa 4) ----------
+//
+// O WhatsApp (e Facebook, etc.) não executa JavaScript ao gerar a prévia de
+// um link — ele só lê o HTML bruto. Por isso, para a prévia mostrar a foto
+// e o nome certos de cada produto, o próprio servidor (aqui) precisa
+// devolver o HTML já com as meta tags corretas, antes do React assumir a
+// tela no navegador da pessoa.
+
+async function handleProdutoPage(request, url, env) {
+  const codigo = decodeURIComponent(url.pathname.replace('/produto/', ''))
+
+  // Pega o HTML base (o mesmo que o site inteiro usa) para depois trocar
+  // só as meta tags de compartilhamento.
+  const baseRequest = new Request(new URL('/', request.url), request)
+  const htmlResp = await env.ASSETS.fetch(baseRequest)
+  let html = await htmlResp.text()
+
+  if (!codigo) {
+    return new Response(html, htmlResp)
+  }
+
+  let dadosProduto = null
+  try {
+    dadosProduto = await buscarDadosProdutoMersan(codigo)
+  } catch {
+    // Sem dados: a página carrega normalmente e o React mostra o erro
+    // (ou "não encontrado") do lado do cliente. As meta tags ficam padrão.
+    return new Response(html, htmlResp)
+  }
+
+  const titulo = `${dadosProduto.nome} - Mersan Calçados`
+  const descricao = 'Mersan Calçados • Loja 261'
+  const chaveFoto = normalizarCodigo(dadosProduto.codigoBarras || codigo)
+  const imagemUrl = `${url.origin}/produto-foto/${encodeURIComponent(chaveFoto)}`
+
+  html = html
+    .replace(
+      '<title>Mersan Calçados - Catálogo Loja 261</title>',
+      `<title>${escapeHtml(titulo)}</title>`
+    )
+    .replaceAll(
+      'content="Mersan Calçados • Loja 261"',
+      `content="${escapeHtml(titulo)}"`
+    )
+    .replaceAll(
+      'content="Consulte produtos e estoque da Mersan Calçados - Loja 261"',
+      `content="${escapeHtml(descricao)}"`
+    )
+    .replace(
+      'content="/icons/icon-512.svg"',
+      `content="${imagemUrl}"`
+    )
+
+  return new Response(html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=UTF-8'
+    }
+  })
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
 }
 
 // ---------- Fotos (Etapa 3) ----------
