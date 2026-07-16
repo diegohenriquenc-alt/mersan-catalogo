@@ -5,6 +5,14 @@
 //  - Rotas /api/* são tratadas por este script (proxy para a API da Mersan)
 //  - Todo o resto é servido como site estático (a build do React em /dist),
 //    através do binding "ASSETS" configurado no wrangler.jsonc
+//
+// Fluxo real da API da Mersan, descoberto via DevTools (aba Network) direto
+// no sistema "Busca Preço" já usado pela loja:
+//  1) GET /api/v1/buscapreco/{termo}/{loja}
+//     -> dados do produto (nome, cor, tamanho, preço) E a referência
+//        no formato que o endpoint de estoque espera (ex: "001 145 8106-3535")
+//  2) GET /api/v1/buscapreco/estoque/{referencia}/{loja}
+//     -> estoque de todos os tamanhos dessa referência, em todas as lojas
 
 const MERSAN_BASE = 'https://credito.mersan.co/api/v1'
 const LOJA = 261
@@ -14,17 +22,84 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url)
 
-    if (url.pathname === '/api/estoque') {
-      return handleEstoque(request, url, ctx)
+    if (url.pathname === '/api/produto') {
+      return handleProduto(request, url, ctx)
     }
 
-    if (url.pathname === '/api/produto') {
-      return handleProduto(url)
+    if (url.pathname === '/api/estoque') {
+      return handleEstoque(request, url, ctx)
     }
 
     // Qualquer outra rota: serve o site estático (React) normalmente.
     return env.ASSETS.fetch(request)
   }
+}
+
+async function handleProduto(request, url, ctx) {
+  const termo = url.searchParams.get('termo')
+
+  if (!termo) {
+    return jsonResponse({ error: 'Parâmetro "termo" é obrigatório.' }, 400)
+  }
+
+  const cache = caches.default
+  const cacheKey = new Request(url.toString(), request)
+
+  const cached = await cache.match(cacheKey)
+  if (cached) {
+    return cached
+  }
+
+  const mersanUrl = `${MERSAN_BASE}/buscapreco/${encodeURIComponent(termo)}/${LOJA}`
+
+  let dados
+  try {
+    const resp = await fetch(mersanUrl, {
+      headers: { Accept: 'application/json' }
+    })
+
+    if (!resp.ok) {
+      return jsonResponse(
+        { error: `A API da Mersan retornou status ${resp.status}.` },
+        502
+      )
+    }
+
+    dados = await resp.json()
+  } catch (err) {
+    return jsonResponse(
+      { error: 'Não foi possível conectar à API da Mersan.' },
+      502
+    )
+  }
+
+  const lista = Array.isArray(dados?.precos) ? dados.precos : []
+
+  if (lista.length === 0) {
+    return jsonResponse({ error: 'Produto não encontrado.' }, 404)
+  }
+
+  // Prefere o registro da loja 261 (preço pode variar por loja),
+  // mas usa o primeiro item como fallback para nunca ficar sem dado.
+  const item = lista.find((p) => p.cdEmpresa === LOJA) || lista[0]
+
+  const payload = {
+    referencia: item.cdReferencia,
+    nome: item.dsProduto,
+    cor: item.cdCor,
+    tamanho: item.dsTamanho,
+    preco: item.vlPrecoPromocao > 0 ? item.vlPrecoPromocao : item.vlPreco,
+    codigoBarras: item.cdProduto,
+    codigoSku: item.cdSKU
+  }
+
+  const response = jsonResponse(payload, 200, {
+    'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`
+  })
+
+  ctx.waitUntil(cache.put(cacheKey, response.clone()))
+
+  return response
 }
 
 async function handleEstoque(request, url, ctx) {
@@ -90,19 +165,6 @@ async function handleEstoque(request, url, ctx) {
   ctx.waitUntil(cache.put(cacheKey, response.clone()))
 
   return response
-}
-
-async function handleProduto(url) {
-  // Ainda não conectado a um endpoint real — ver README para detalhes.
-  const termo = url.searchParams.get('termo')
-
-  return jsonResponse(
-    {
-      error: 'Endpoint de dados do produto ainda não configurado.',
-      termoConsultado: termo
-    },
-    501
-  )
 }
 
 function jsonResponse(data, status = 200, extraHeaders = {}) {
