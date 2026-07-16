@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 
@@ -72,6 +72,13 @@ function PainelFotos({ senha }) {
   const [fotos, setFotos] = useState([])
   const [carregandoLista, setCarregandoLista] = useState(false)
 
+  // Leitor de código de barras pela câmera
+  const [scanAtivo, setScanAtivo] = useState(false)
+  const [scanErro, setScanErro] = useState(null)
+  const videoRef = useRef(null)
+  const streamRef = useRef(null)
+  const scanLoopRef = useRef(null)
+
   const carregarLista = useCallback(async () => {
     setCarregandoLista(true)
     try {
@@ -97,9 +104,73 @@ function PainelFotos({ senha }) {
     setPreview(file ? URL.createObjectURL(file) : null)
   }
 
-  // Redimensiona para no máximo 1000px no lado maior e comprime como JPEG.
-  // Isso deixa o carregamento das fotos no catálogo bem mais rápido e
-  // ajuda a caber muito mais fotos dentro do limite gratuito de 1GB do KV.
+  // Usa o leitor de código de barras nativo do navegador (sem custo, sem
+  // biblioteca externa). Disponível no Chrome para Android; se o aparelho
+  // não suportar, mostra um aviso e o código continua podendo ser digitado.
+  async function abrirLeitor() {
+    setScanErro(null)
+
+    if (!('BarcodeDetector' in window)) {
+      setScanErro('Este navegador não suporta leitura automática. Digite o código manualmente.')
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
+      })
+      streamRef.current = stream
+      setScanAtivo(true)
+
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          videoRef.current.play()
+          iniciarLeitura()
+        }
+      }, 0)
+    } catch {
+      setScanErro('Não foi possível acessar a câmera. Verifique a permissão do navegador.')
+    }
+  }
+
+  function fecharLeitor() {
+    if (scanLoopRef.current) {
+      cancelAnimationFrame(scanLoopRef.current)
+      scanLoopRef.current = null
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
+    }
+    setScanAtivo(false)
+  }
+
+  function iniciarLeitura() {
+    const detector = new window.BarcodeDetector()
+
+    async function verificar() {
+      if (!videoRef.current) return
+      try {
+        const codigos = await detector.detect(videoRef.current)
+        if (codigos.length > 0) {
+          setCodigo(codigos[0].rawValue)
+          fecharLeitor()
+          return
+        }
+      } catch {
+        // Frame ainda não pronto ou ilegível — tenta de novo no próximo quadro.
+      }
+      scanLoopRef.current = requestAnimationFrame(verificar)
+    }
+
+    scanLoopRef.current = requestAnimationFrame(verificar)
+  }
+
+  useEffect(() => {
+    return () => fecharLeitor()
+  }, [])
+
   async function comprimirImagem(file) {
     const bitmap = await createImageBitmap(file)
     const escala = Math.min(1, 1000 / Math.max(bitmap.width, bitmap.height))
@@ -132,7 +203,6 @@ function PainelFotos({ senha }) {
       const arquivoComprimido = await comprimirImagem(arquivo)
       form.append('arquivo', arquivoComprimido)
     } catch {
-      // Se a compressão falhar por algum motivo, envia o arquivo original.
       form.append('arquivo', arquivo)
     }
 
@@ -190,13 +260,19 @@ function PainelFotos({ senha }) {
         <form onSubmit={handleEnviar} style={styles.formUpload}>
           <label style={styles.label}>
             Código do produto (código de barras, SKU ou referência)
-            <input
-              type="text"
-              value={codigo}
-              onChange={(e) => setCodigo(e.target.value)}
-              placeholder="Ex: 7770005662888"
-              style={styles.input}
-            />
+            <div style={styles.linhaCodigo}>
+              <input
+                type="text"
+                value={codigo}
+                onChange={(e) => setCodigo(e.target.value)}
+                placeholder="Ex: 7770005662888"
+                style={{ ...styles.input, flex: 1 }}
+              />
+              <button type="button" onClick={abrirLeitor} style={styles.botaoBipar}>
+                📷 Bipar
+              </button>
+            </div>
+            {scanErro && <p style={styles.erro}>{scanErro}</p>}
           </label>
 
           <label style={styles.label}>
@@ -242,6 +318,16 @@ function PainelFotos({ senha }) {
           </ul>
         </div>
       </div>
+
+      {scanAtivo && (
+        <div style={styles.scannerOverlay}>
+          <video ref={videoRef} style={styles.scannerVideo} playsInline muted />
+          <p style={styles.scannerDica}>Aponte a câmera para o código de barras</p>
+          <button onClick={fecharLeitor} style={styles.scannerCancelar}>
+            Cancelar
+          </button>
+        </div>
+      )}
     </main>
   )
 }
@@ -392,5 +478,50 @@ const styles = {
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer'
+  },
+  linhaCodigo: {
+    display: 'flex',
+    gap: '8px'
+  },
+  botaoBipar: {
+    padding: '0 16px',
+    fontSize: '14px',
+    fontWeight: 700,
+    color: '#0057ff',
+    background: '#f2f6ff',
+    border: 'none',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap'
+  },
+  scannerOverlay: {
+    position: 'fixed',
+    inset: 0,
+    background: '#000000',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '16px',
+    zIndex: 1000
+  },
+  scannerVideo: {
+    width: '100%',
+    maxWidth: '480px',
+    borderRadius: '12px'
+  },
+  scannerDica: {
+    color: '#ffffff',
+    fontSize: '14px'
+  },
+  scannerCancelar: {
+    padding: '12px 24px',
+    fontSize: '15px',
+    fontWeight: 700,
+    color: '#111111',
+    background: '#ffffff',
+    border: 'none',
+    borderRadius: '999px',
+    cursor: 'pointer'
   }
-              }
+          }
