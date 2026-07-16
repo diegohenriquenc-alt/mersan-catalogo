@@ -72,6 +72,11 @@ function PainelFotos({ senha }) {
   const [fotos, setFotos] = useState([])
   const [carregandoLista, setCarregandoLista] = useState(false)
 
+  const [vendedores, setVendedores] = useState([])
+  const [nomeVendedor, setNomeVendedor] = useState('')
+  const [whatsappVendedor, setWhatsappVendedor] = useState('')
+  const [salvandoVendedor, setSalvandoVendedor] = useState(false)
+
   const [scanAtivo, setScanAtivo] = useState(false)
   const [scanErro, setScanErro] = useState(null)
   const videoRef = useRef(null)
@@ -87,7 +92,6 @@ function PainelFotos({ senha }) {
       const data = await resp.json()
       setFotos(data.fotos || [])
     } catch {
-      // silencioso — a lista é só um apoio visual
     } finally {
       setCarregandoLista(false)
     }
@@ -96,6 +100,58 @@ function PainelFotos({ senha }) {
   useEffect(() => {
     carregarLista()
   }, [carregarLista])
+
+  const carregarVendedores = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/admin/vendedores', {
+        headers: { 'X-Admin-Password': senha }
+      })
+      const data = await resp.json()
+      setVendedores(data.vendedores || [])
+    } catch {
+    }
+  }, [senha])
+
+  useEffect(() => {
+    carregarVendedores()
+  }, [carregarVendedores])
+
+  async function handleSalvarVendedor(e) {
+    e.preventDefault()
+    if (!nomeVendedor || !whatsappVendedor) return
+
+    setSalvandoVendedor(true)
+    try {
+      await fetch('/api/admin/vendedores', {
+        method: 'POST',
+        headers: {
+          'X-Admin-Password': senha,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ nome: nomeVendedor, whatsapp: whatsappVendedor })
+      })
+      setNomeVendedor('')
+      setWhatsappVendedor('')
+      carregarVendedores()
+    } catch {
+      alert('Não foi possível salvar o vendedor agora. Tente novamente.')
+    } finally {
+      setSalvandoVendedor(false)
+    }
+  }
+
+  async function handleExcluirVendedor(id) {
+    if (!confirm('Excluir este vendedor?')) return
+    try {
+      await fetch(`/api/admin/vendedores?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { 'X-Admin-Password': senha }
+      })
+      carregarVendedores()
+    } catch {
+      alert('Não foi possível excluir agora. Tente novamente.')
+    }
+  }
 
   function handleArquivo(e) {
     const file = e.target.files?.[0] || null
@@ -155,7 +211,6 @@ function PainelFotos({ senha }) {
           return
         }
       } catch {
-        // Frame ainda não pronto ou ilegível — tenta de novo no próximo quadro.
       }
       scanLoopRef.current = requestAnimationFrame(verificar)
     }
@@ -167,7 +222,7 @@ function PainelFotos({ senha }) {
     return () => fecharLeitor()
   }, [])
 
-  const TAMANHO_MAXIMO_BYTES = 400 * 1024 // 400KB
+  const TAMANHO_MAXIMO_BYTES = 400 * 1024
 
   async function comprimirImagem(file) {
     const bitmap = await createImageBitmap(file)
@@ -331,6 +386,50 @@ function PainelFotos({ senha }) {
             ))}
           </ul>
         </div>
+
+        <div style={styles.listaBox}>
+          <h2 style={styles.subtitulo}>Vendedores ({vendedores.length})</h2>
+
+          <form onSubmit={handleSalvarVendedor} style={styles.formVendedor}>
+            <input
+              type="text"
+              value={nomeVendedor}
+              onChange={(e) => setNomeVendedor(e.target.value)}
+              placeholder="Nome (ex: Diego)"
+              style={styles.input}
+            />
+            <input
+              type="tel"
+              value={whatsappVendedor}
+              onChange={(e) => setWhatsappVendedor(e.target.value)}
+              placeholder="WhatsApp com DDD e país (ex: 5511999999999)"
+              style={styles.input}
+            />
+            <button
+              type="submit"
+              style={styles.botaoSecundario}
+              disabled={salvandoVendedor || !nomeVendedor || !whatsappVendedor}
+            >
+              {salvandoVendedor ? 'Salvando…' : 'Adicionar vendedor'}
+            </button>
+          </form>
+
+          {vendedores.length === 0 && (
+            <p style={styles.vazio}>Nenhum vendedor cadastrado ainda.</p>
+          )}
+          <ul style={styles.lista}>
+            {vendedores.map((v) => (
+              <li key={v.id} style={styles.itemLista}>
+                <span style={styles.codigoLista}>
+                  {v.nome} <span style={styles.tamanhoTexto}>• {v.whatsapp}</span>
+                </span>
+                <button onClick={() => handleExcluirVendedor(v.id)} style={styles.botaoExcluir}>
+                  Excluir
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
 
       {scanAtivo && (
@@ -408,6 +507,12 @@ const styles = {
     border: '1px solid #e6e6e6',
     borderRadius: '14px',
     padding: '18px'
+  },
+  formVendedor: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    marginBottom: '16px'
   },
   preview: {
     width: '120px',
@@ -542,4 +647,4 @@ const styles = {
     borderRadius: '999px',
     cursor: 'pointer'
   }
-}
+    }
