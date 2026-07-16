@@ -1,0 +1,396 @@
+import { useState, useEffect, useCallback } from 'react'
+
+const IMAGEM_PADRAO = '/icons/icon-512.svg'
+
+export default function Admin() {
+  const [senha, setSenha] = useState('')
+  const [autenticado, setAutenticado] = useState(false)
+  const [erroLogin, setErroLogin] = useState(null)
+  const [verificandoLogin, setVerificandoLogin] = useState(false)
+
+  useEffect(() => {
+    const salva = sessionStorage.getItem('mersan_admin_senha')
+    if (salva) {
+      setSenha(salva)
+      setAutenticado(true)
+    }
+  }, [])
+
+  async function handleLogin(e) {
+    e.preventDefault()
+    setVerificandoLogin(true)
+    setErroLogin(null)
+    try {
+      const resp = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'X-Admin-Password': senha }
+      })
+      if (!resp.ok) {
+        setErroLogin('Senha incorreta.')
+        return
+      }
+      sessionStorage.setItem('mersan_admin_senha', senha)
+      setAutenticado(true)
+    } catch {
+      setErroLogin('Não foi possível conectar. Tente novamente.')
+    } finally {
+      setVerificandoLogin(false)
+    }
+  }
+
+  if (!autenticado) {
+    return (
+      <main style={styles.main}>
+        <form onSubmit={handleLogin} style={styles.loginBox}>
+          <h1 style={styles.titulo}>Painel administrativo</h1>
+          <input
+            type="password"
+            placeholder="Senha"
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+            style={styles.input}
+            autoFocus
+          />
+          {erroLogin && <p style={styles.erro}>{erroLogin}</p>}
+          <button type="submit" style={styles.botao} disabled={verificandoLogin}>
+            {verificandoLogin ? 'Entrando…' : 'Entrar'}
+          </button>
+        </form>
+      </main>
+    )
+  }
+
+  return <PainelFotos senha={senha} />
+}
+
+function PainelFotos({ senha }) {
+  const [codigo, setCodigo] = useState('')
+  const [arquivo, setArquivo] = useState(null)
+  const [preview, setPreview] = useState(null)
+  const [status, setStatus] = useState(null)
+  const [enviando, setEnviando] = useState(false)
+  const [fotos, setFotos] = useState([])
+  const [carregandoLista, setCarregandoLista] = useState(false)
+
+  const carregarLista = useCallback(async () => {
+    setCarregandoLista(true)
+    try {
+      const resp = await fetch('/api/admin/fotos', {
+        headers: { 'X-Admin-Password': senha }
+      })
+      const data = await resp.json()
+      setFotos(data.fotos || [])
+    } catch {
+      // silencioso — a lista é só um apoio visual
+    } finally {
+      setCarregandoLista(false)
+    }
+  }, [senha])
+
+  useEffect(() => {
+    carregarLista()
+  }, [carregarLista])
+
+  function handleArquivo(e) {
+    const file = e.target.files?.[0] || null
+    setArquivo(file)
+    setPreview(file ? URL.createObjectURL(file) : null)
+  }
+
+  // Redimensiona para no máximo 1000px no lado maior e comprime como JPEG.
+  // Isso deixa o carregamento das fotos no catálogo bem mais rápido e
+  // ajuda a caber muito mais fotos dentro do limite gratuito de 1GB do KV.
+  async function comprimirImagem(file) {
+    const bitmap = await createImageBitmap(file)
+    const escala = Math.min(1, 1000 / Math.max(bitmap.width, bitmap.height))
+    const largura = Math.round(bitmap.width * escala)
+    const altura = Math.round(bitmap.height * escala)
+
+    const canvas = document.createElement('canvas')
+    canvas.width = largura
+    canvas.height = altura
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(bitmap, 0, 0, largura, altura)
+
+    const blob = await new Promise((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', 0.82)
+    )
+
+    return new File([blob], 'foto.jpg', { type: 'image/jpeg' })
+  }
+
+  async function handleEnviar(e) {
+    e.preventDefault()
+    if (!codigo || !arquivo) return
+
+    setEnviando(true)
+    setStatus(null)
+
+    const form = new FormData()
+    form.append('codigo', codigo)
+    try {
+      const arquivoComprimido = await comprimirImagem(arquivo)
+      form.append('arquivo', arquivoComprimido)
+    } catch {
+      // Se a compressão falhar por algum motivo, envia o arquivo original.
+      form.append('arquivo', arquivo)
+    }
+
+    try {
+      const resp = await fetch('/api/admin/foto', {
+        method: 'POST',
+        headers: { 'X-Admin-Password': senha },
+        body: form
+      })
+      const data = await resp.json()
+      if (!resp.ok) {
+        setStatus({ tipo: 'erro', texto: data.error || 'Falha ao enviar.' })
+      } else {
+        setStatus({ tipo: 'sucesso', texto: `Foto salva para "${data.codigo}".` })
+        setCodigo('')
+        setArquivo(null)
+        setPreview(null)
+        carregarLista()
+      }
+    } catch {
+      setStatus({ tipo: 'erro', texto: 'Não foi possível conectar.' })
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  async function handleExcluir(codigoFoto) {
+    if (!confirm(`Excluir a foto de "${codigoFoto}"?`)) return
+    try {
+      await fetch(`/api/admin/foto?codigo=${encodeURIComponent(codigoFoto)}`, {
+        method: 'DELETE',
+        headers: { 'X-Admin-Password': senha }
+      })
+      carregarLista()
+    } catch {
+      alert('Não foi possível excluir agora. Tente novamente.')
+    }
+  }
+
+  function handleSair() {
+    sessionStorage.removeItem('mersan_admin_senha')
+    window.location.reload()
+  }
+
+  return (
+    <main style={styles.main}>
+      <div style={styles.painel}>
+        <div style={styles.cabecalho}>
+          <h1 style={styles.titulo}>Fotos dos produtos</h1>
+          <button onClick={handleSair} style={styles.botaoSair}>
+            Sair
+          </button>
+        </div>
+
+        <form onSubmit={handleEnviar} style={styles.formUpload}>
+          <label style={styles.label}>
+            Código do produto (código de barras, SKU ou referência)
+            <input
+              type="text"
+              value={codigo}
+              onChange={(e) => setCodigo(e.target.value)}
+              placeholder="Ex: 7770005662888"
+              style={styles.input}
+            />
+          </label>
+
+          <label style={styles.label}>
+            Foto
+            <input type="file" accept="image/*" onChange={handleArquivo} style={styles.inputArquivo} />
+          </label>
+
+          {preview && <img src={preview} alt="Pré-visualização" style={styles.preview} />}
+
+          {status && (
+            <p style={status.tipo === 'erro' ? styles.erro : styles.sucesso}>{status.texto}</p>
+          )}
+
+          <button type="submit" style={styles.botao} disabled={enviando || !codigo || !arquivo}>
+            {enviando ? 'Enviando…' : 'Salvar foto'}
+          </button>
+        </form>
+
+        <div style={styles.listaBox}>
+          <h2 style={styles.subtitulo}>
+            Fotos cadastradas {carregandoLista ? '(carregando…)' : `(${fotos.length})`}
+          </h2>
+          {fotos.length === 0 && !carregandoLista && (
+            <p style={styles.vazio}>Nenhuma foto cadastrada ainda.</p>
+          )}
+          <ul style={styles.lista}>
+            {fotos.map((f) => (
+              <li key={f.codigo} style={styles.itemLista}>
+                <img
+                  src={`/produto-foto/${encodeURIComponent(f.codigo)}`}
+                  alt={f.codigo}
+                  style={styles.miniatura}
+                  onError={(e) => {
+                    e.currentTarget.src = IMAGEM_PADRAO
+                  }}
+                />
+                <span style={styles.codigoLista}>{f.codigo}</span>
+                <button onClick={() => handleExcluir(f.codigo)} style={styles.botaoExcluir}>
+                  Excluir
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </main>
+  )
+}
+
+const styles = {
+  main: {
+    minHeight: '100dvh',
+    display: 'flex',
+    justifyContent: 'center',
+    padding: '24px'
+  },
+  loginBox: {
+    width: '100%',
+    maxWidth: '360px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    marginTop: '20vh'
+  },
+  painel: {
+    width: '100%',
+    maxWidth: '520px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '24px'
+  },
+  cabecalho: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  titulo: {
+    fontSize: '20px',
+    fontWeight: 700,
+    margin: 0
+  },
+  subtitulo: {
+    fontSize: '15px',
+    fontWeight: 700,
+    margin: '0 0 12px'
+  },
+  label: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    fontSize: '13px',
+    color: '#6b6b6b',
+    fontWeight: 600
+  },
+  input: {
+    padding: '14px 16px',
+    fontSize: '16px',
+    borderRadius: '10px',
+    border: '1px solid #e6e6e6',
+    outline: 'none'
+  },
+  inputArquivo: {
+    fontSize: '14px'
+  },
+  formUpload: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+    border: '1px solid #e6e6e6',
+    borderRadius: '14px',
+    padding: '18px'
+  },
+  preview: {
+    width: '120px',
+    height: '120px',
+    objectFit: 'contain',
+    borderRadius: '10px',
+    border: '1px solid #e6e6e6',
+    background: '#fafafa'
+  },
+  botao: {
+    padding: '14px',
+    fontSize: '15px',
+    fontWeight: 700,
+    color: '#ffffff',
+    background: '#0057ff',
+    border: 'none',
+    borderRadius: '10px',
+    cursor: 'pointer'
+  },
+  botaoSair: {
+    padding: '8px 14px',
+    fontSize: '13px',
+    fontWeight: 600,
+    color: '#111111',
+    background: '#f2f2f2',
+    border: 'none',
+    borderRadius: '999px',
+    cursor: 'pointer'
+  },
+  erro: {
+    color: '#d92d20',
+    fontSize: '13px',
+    margin: 0
+  },
+  sucesso: {
+    color: '#0a7d32',
+    fontSize: '13px',
+    margin: 0
+  },
+  listaBox: {
+    border: '1px solid #e6e6e6',
+    borderRadius: '14px',
+    padding: '18px'
+  },
+  vazio: {
+    color: '#6b6b6b',
+    fontSize: '13px'
+  },
+  lista: {
+    listStyle: 'none',
+    margin: 0,
+    padding: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px'
+  },
+  itemLista: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px'
+  },
+  miniatura: {
+    width: '44px',
+    height: '44px',
+    objectFit: 'contain',
+    borderRadius: '8px',
+    border: '1px solid #e6e6e6',
+    background: '#fafafa'
+  },
+  codigoLista: {
+    flex: 1,
+    fontSize: '13px',
+    color: '#111111',
+    wordBreak: 'break-all'
+  },
+  botaoExcluir: {
+    padding: '6px 12px',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#d92d20',
+    background: '#fff0ef',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer'
+  }
+              }
