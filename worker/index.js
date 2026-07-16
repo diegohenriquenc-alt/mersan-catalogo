@@ -52,6 +52,30 @@ export default {
       return handleAdminListarFotos(request, env)
     }
 
+    if (url.pathname === '/api/fotos-publicas' && request.method === 'GET') {
+      return handleFotosPublicas(env)
+    }
+
+    if (url.pathname === '/api/vendedores' && request.method === 'GET') {
+      return handleVendedoresPublico(env)
+    }
+
+    if (url.pathname === '/api/admin/vendedores' && request.method === 'GET') {
+      return handleAdminListarVendedores(request, env)
+    }
+
+    if (url.pathname === '/api/admin/vendedores' && request.method === 'POST') {
+      return handleAdminSalvarVendedor(request, env)
+    }
+
+    if (url.pathname === '/api/admin/vendedores' && request.method === 'DELETE') {
+      return handleAdminExcluirVendedor(request, url, env)
+    }
+
+    if (url.pathname === '/ir-vendedor' && request.method === 'GET') {
+      return handleIrVendedor(request, url, env)
+    }
+
     // Qualquer outra rota: serve o site estático (React) normalmente.
     return env.ASSETS.fetch(request)
   }
@@ -200,8 +224,6 @@ async function handleEstoque(request, url, ctx) {
 async function handleProdutoPage(request, url, env) {
   const codigo = decodeURIComponent(url.pathname.replace('/produto/', ''))
 
-  // Pega o HTML base (o mesmo que o site inteiro usa) para depois trocar
-  // só as meta tags de compartilhamento.
   const baseRequest = new Request(new URL('/', request.url), request)
   const htmlResp = await env.ASSETS.fetch(baseRequest)
   let html = await htmlResp.text()
@@ -214,8 +236,6 @@ async function handleProdutoPage(request, url, env) {
   try {
     dadosProduto = await buscarDadosProdutoMersan(codigo)
   } catch {
-    // Sem dados: a página carrega normalmente e o React mostra o erro
-    // (ou "não encontrado") do lado do cliente. As meta tags ficam padrão.
     return new Response(html, htmlResp)
   }
 
@@ -260,10 +280,6 @@ function escapeHtml(str) {
 }
 
 // ---------- Fotos (Etapa 3) ----------
-// Usando Workers KV em vez de R2: funciona no plano gratuito do Cloudflare
-// sem exigir cartão de crédito cadastrado. Limite gratuito: 1GB de
-// armazenamento e milhares de fotos (recomenda-se manter cada foto
-// comprimida/redimensionada antes do envio — o painel já faz isso sozinho).
 
 function normalizarCodigo(codigo) {
   return codigo.trim().replace(/\s+/g, '_')
@@ -282,7 +298,7 @@ async function handleServirFoto(url, env) {
   return new Response(resultado.value, {
     headers: {
       'Content-Type': resultado.metadata?.contentType || 'image/jpeg',
-      'Cache-Control': 'public, max-age=86400' // 1 dia
+      'Cache-Control': 'public, max-age=86400'
     }
   })
 }
@@ -315,7 +331,6 @@ async function handleAdminUploadFoto(request, env) {
   const chave = normalizarCodigo(codigo)
   const bytes = await arquivo.arrayBuffer()
 
-  // Limite de segurança: o KV aceita até 25MB por valor.
   if (bytes.byteLength > 24 * 1024 * 1024) {
     return jsonResponse({ error: 'Arquivo grande demais (máximo 24MB).' }, 400)
   }
@@ -359,6 +374,147 @@ async function handleAdminListarFotos(request, env) {
   return jsonResponse({ fotos, truncado: !listagem.list_complete })
 }
 
+// ---------- Vitrine pública (lista de fotos, sem senha) ----------
+
+async function handleFotosPublicas(env) {
+  const listagem = await env.FOTOS.list({ limit: 200 })
+  const codigos = listagem.keys
+    .map((k) => k.name)
+    .filter((nome) => nome !== VENDEDORES_CHAVE)
+
+  return jsonResponse({ codigos, truncado: !listagem.list_complete })
+}
+
+// ---------- Vendedores ----------
+
+const VENDEDORES_CHAVE = '_vendedores'
+
+async function getVendedores(env) {
+  const bruto = await env.FOTOS.get(VENDEDORES_CHAVE)
+  if (!bruto) return []
+  try {
+    const lista = JSON.parse(bruto)
+    return Array.isArray(lista) ? lista : []
+  } catch {
+    return []
+  }
+}
+
+async function salvarVendedores(env, lista) {
+  await env.FOTOS.put(VENDEDORES_CHAVE, JSON.stringify(lista))
+}
+
+async function handleVendedoresPublico(env) {
+  const lista = await getVendedores(env)
+  const publico = lista.map((v) => ({ id: v.id, nome: v.nome }))
+  return jsonResponse({ vendedores: publico })
+}
+
+async function handleAdminListarVendedores(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+  const lista = await getVendedores(env)
+  return jsonResponse({ vendedores: lista })
+}
+
+async function handleAdminSalvarVendedor(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const corpo = await request.json().catch(() => null)
+  const nome = corpo?.nome?.trim()
+  const whatsapp = corpo?.whatsapp?.replace(/\D/g, '')
+
+  if (!nome || !whatsapp) {
+    return jsonResponse({ error: 'Envie "nome" e "whatsapp".' }, 400)
+  }
+
+  const lista = await getVendedores(env)
+  const id = corpo?.id || crypto.randomUUID()
+  const existente = lista.findIndex((v) => v.id === id)
+  const registro = { id, nome, whatsapp }
+
+  if (existente >= 0) {
+    lista[existente] = registro
+  } else {
+    lista.push(registro)
+  }
+
+  await salvarVendedores(env, lista)
+  return jsonResponse({ ok: true, vendedor: registro })
+}
+
+async function handleAdminExcluirVendedor(request, url, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const id = url.searchParams.get('id')
+  if (!id) {
+    return jsonResponse({ error: 'Parâmetro "id" é obrigatório.' }, 400)
+  }
+
+  const lista = await getVendedores(env)
+  const nova = lista.filter((v) => v.id !== id)
+  await salvarVendedores(env, nova)
+  return jsonResponse({ ok: true })
+}
+
+async function handleIrVendedor(request, url, env) {
+  const vendedorId = url.searchParams.get('vendedor')
+  const codigo = url.searchParams.get('codigo')
+  const tamanho = url.searchParams.get('tamanho')
+  const parcelas = Number(url.searchParams.get('parcelas')) || 1
+
+  if (!vendedorId || !codigo) {
+    return new Response('Link inválido.', { status: 400 })
+  }
+
+  const lista = await getVendedores(env)
+  const vendedor = lista.find((v) => v.id === vendedorId)
+
+  if (!vendedor) {
+    return new Response('Vendedor não encontrado.', { status: 404 })
+  }
+
+  let nomeProduto = codigo
+  let preco = null
+  try {
+    const dados = await buscarDadosProdutoMersan(codigo)
+    nomeProduto = dados.nome
+    preco = dados.preco
+  } catch {
+    // Sem dados do produto: usa o código mesmo assim, não trava o link.
+  }
+
+  const linkProduto = `${url.origin}/produto/${encodeURIComponent(codigo)}`
+
+  const linhas = [
+    'Olá! Tenho interesse neste produto da Mersan Calçados:',
+    nomeProduto
+  ]
+
+  if (tamanho) linhas.push(`Tamanho: ${tamanho}`)
+
+  if (preco != null) {
+    if (parcelas > 1) {
+      const valorParcela = (preco / parcelas).toFixed(2).replace('.', ',')
+      linhas.push(`Parcelamento: ${parcelas}x de R$ ${valorParcela} (parcela mínima R$ 25)`)
+    } else {
+      linhas.push(`Valor: R$ ${preco.toFixed(2).replace('.', ',')}`)
+    }
+  }
+
+  linhas.push(linkProduto)
+
+  const mensagem = linhas.join('\n')
+  const linkWhatsApp = `https://wa.me/${vendedor.whatsapp}?text=${encodeURIComponent(mensagem)}`
+
+  return Response.redirect(linkWhatsApp, 302)
+}
+
 // ---------- Utilitário ----------
 
 function jsonResponse(data, status = 200, extraHeaders = {}) {
@@ -370,4 +526,4 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
       ...extraHeaders
     }
   })
-}
+                                  }
