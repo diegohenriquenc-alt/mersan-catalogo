@@ -60,12 +60,17 @@ class ApiService {
     const dadosProduto = await ApiService.buscarDadosProduto(termo)
     const estoque = await ApiService.buscarEstoque(dadosProduto.referencia)
 
+    // Chave da foto: código de barras do produto (o mesmo que o painel
+    // administrativo usa ao cadastrar a foto). Se a foto não existir,
+    // o componente ProductResult cai para a imagem padrão automaticamente.
+    const chaveFoto = dadosProduto.codigoBarras || termo
+
     return {
       referencia: dadosProduto.referencia,
       nome: dadosProduto.nome,
       cor: dadosProduto.cor,
       preco: dadosProduto.preco,
-      foto: null, // sistema próprio de fotos entra na Etapa 3
+      foto: `/produto-foto/${encodeURIComponent(chaveFoto)}`,
       loja: LOJA,
       estoque: estoque.estoque,
       atualizadoEm: estoque.atualizadoEm
