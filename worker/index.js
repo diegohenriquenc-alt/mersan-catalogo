@@ -21,7 +21,7 @@ export default {
     const url = new URL(request.url)
 
     if (url.pathname.startsWith('/produto/')) {
-      return handleProdutoPage(request, url, env)
+      return handleProdutoPage(request, url, env, ctx)
     }
 
     if (url.pathname === '/api/produto') {
@@ -213,8 +213,16 @@ async function handleEstoque(request, url, ctx) {
 
 // ---------- Página do produto com Open Graph dinâmico ----------
 
-async function handleProdutoPage(request, url, env) {
+async function handleProdutoPage(request, url, env, ctx) {
   const codigo = decodeURIComponent(url.pathname.replace('/produto/', ''))
+
+  const cache = caches.default
+  const cacheKey = new Request(url.toString(), request)
+
+  const cached = await cache.match(cacheKey)
+  if (cached) {
+    return cached
+  }
 
   const baseRequest = new Request(new URL('/', request.url), request)
   const htmlResp = await env.ASSETS.fetch(baseRequest)
@@ -254,12 +262,17 @@ async function handleProdutoPage(request, url, env) {
       `<meta property="og:image" content="${imagemUrl}" />\n    <meta property="og:image:type" content="image/jpeg" />`
     )
 
-  return new Response(html, {
+  const response = new Response(html, {
     status: 200,
     headers: {
-      'Content-Type': 'text/html; charset=UTF-8'
+      'Content-Type': 'text/html; charset=UTF-8',
+      'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`
     }
   })
+
+  ctx.waitUntil(cache.put(cacheKey, response.clone()))
+
+  return response
 }
 
 function escapeHtml(str) {
@@ -531,4 +544,4 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
       ...extraHeaders
     }
   })
-}
+    }
