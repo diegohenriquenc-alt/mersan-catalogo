@@ -91,3 +91,34 @@ const styles = {
   },
   estoqueTitulo: {
     fontSize: '13px',
+    fontWeight: 700,
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+    color: '#111111',
+    margin: '0 0 8px',
+    textAlign: 'center'
+  },
+  lista: {
+    listStyle: 'none',
+    margin: 0,
+    padding: 0,
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    justifyContent: 'center'
+  },
+  item: {
+    fontSize: '14px',
+    fontWeight: 600,
+    background: '#f2f6ff',
+    color: '#0057ff',
+    borderRadius: '999px',
+    padding: '6px 14px'
+  },
+  semEstoque: {
+    fontSize: '14px',
+    color: '#6b6b6b',
+    textAlign: 'center',
+    margin: 0
+  }
+}
