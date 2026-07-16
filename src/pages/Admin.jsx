@@ -72,7 +72,6 @@ function PainelFotos({ senha }) {
   const [fotos, setFotos] = useState([])
   const [carregandoLista, setCarregandoLista] = useState(false)
 
-  // Leitor de código de barras pela câmera
   const [scanAtivo, setScanAtivo] = useState(false)
   const [scanErro, setScanErro] = useState(null)
   const videoRef = useRef(null)
@@ -104,9 +103,6 @@ function PainelFotos({ senha }) {
     setPreview(file ? URL.createObjectURL(file) : null)
   }
 
-  // Usa o leitor de código de barras nativo do navegador (sem custo, sem
-  // biblioteca externa). Disponível no Chrome para Android; se o aparelho
-  // não suportar, mostra um aviso e o código continua podendo ser digitado.
   async function abrirLeitor() {
     setScanErro(null)
 
@@ -171,6 +167,8 @@ function PainelFotos({ senha }) {
     return () => fecharLeitor()
   }, [])
 
+  const TAMANHO_MAXIMO_BYTES = 400 * 1024 // 400KB
+
   async function comprimirImagem(file) {
     const bitmap = await createImageBitmap(file)
     const escala = Math.min(1, 1000 / Math.max(bitmap.width, bitmap.height))
@@ -183,11 +181,18 @@ function PainelFotos({ senha }) {
     const ctx = canvas.getContext('2d')
     ctx.drawImage(bitmap, 0, 0, largura, altura)
 
-    const blob = await new Promise((resolve) =>
-      canvas.toBlob(resolve, 'image/jpeg', 0.82)
-    )
+    const qualidades = [0.82, 0.7, 0.55, 0.4]
+    let ultimoBlob = null
 
-    return new File([blob], 'foto.jpg', { type: 'image/jpeg' })
+    for (const qualidade of qualidades) {
+      const blob = await new Promise((resolve) =>
+        canvas.toBlob(resolve, 'image/jpeg', qualidade)
+      )
+      ultimoBlob = blob
+      if (blob && blob.size <= TAMANHO_MAXIMO_BYTES) break
+    }
+
+    return new File([ultimoBlob], 'foto.jpg', { type: 'image/jpeg' })
   }
 
   async function handleEnviar(e) {
@@ -309,7 +314,16 @@ function PainelFotos({ senha }) {
                     e.currentTarget.src = IMAGEM_PADRAO
                   }}
                 />
-                <span style={styles.codigoLista}>{f.codigo}</span>
+                <span style={styles.codigoLista}>
+                  {f.codigo}
+                  {f.tamanho != null && (
+                    <span style={styles.tamanhoTexto}>
+                      {' '}
+                      • {Math.round(f.tamanho / 1024)}KB
+                      {f.tamanho > 400 * 1024 ? ' ⚠️ pesada' : ''}
+                    </span>
+                  )}
+                </span>
                 <button onClick={() => handleExcluir(f.codigo)} style={styles.botaoExcluir}>
                   Excluir
                 </button>
@@ -469,6 +483,10 @@ const styles = {
     color: '#111111',
     wordBreak: 'break-all'
   },
+  tamanhoTexto: {
+    color: '#6b6b6b',
+    fontWeight: 400
+  },
   botaoExcluir: {
     padding: '6px 12px',
     fontSize: '12px',
@@ -524,4 +542,4 @@ const styles = {
     borderRadius: '999px',
     cursor: 'pointer'
   }
-          }
+}
