@@ -169,9 +169,7 @@ export default function Catalogo() {
               <div style={styles.cardInfo}>
                 <span style={styles.nome}>{p.nome}</span>
                 {p.preco != null && <span style={styles.preco}>{formatarPreco(p.preco)}</span>}
-                {calcularParcelamento(p.preco) && (
-                  <span style={styles.parcelamento}>{calcularParcelamento(p.preco)}</span>
-                )}
+                <span style={styles.parcelamento}>{calcularParcelamento(p.preco) || '\u00A0'}</span>
               </div>
             </Link>
           ))}
@@ -292,6 +290,7 @@ const styles = {
   card: {
     display: 'flex',
     flexDirection: 'column',
+    height: '100%',
     textDecoration: 'none',
     color: '#111111',
     borderRadius: '14px',
@@ -326,12 +325,14 @@ const styles = {
     padding: '10px 8px 14px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '3px'
+    gap: '3px',
+    flex: 1
   },
   nome: {
     fontSize: '13px',
     fontWeight: 600,
     lineHeight: 1.3,
+    minHeight: '2.6em',
     display: '-webkit-box',
     WebkitLineClamp: 2,
     WebkitBoxOrient: 'vertical',
@@ -344,7 +345,8 @@ const styles = {
   },
   parcelamento: {
     fontSize: '11px',
-    color: '#6b6b6b'
+    color: '#6b6b6b',
+    minHeight: '1.4em'
   },
   overlay: {
     position: 'fixed',
@@ -405,4 +407,4 @@ const styles = {
     borderRadius: '10px',
     cursor: 'pointer'
   }
-                }
+  }
