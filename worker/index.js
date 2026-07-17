@@ -241,8 +241,7 @@ async function handleEstoque(request, url, ctx) {
   const cached = await cache.match(cacheKey)
   if (cached) {
     return cached
-  }
-  let estoqueLoja261
+}let estoqueLoja261
   try {
     estoqueLoja261 = await buscarEstoqueMersan(referencia)
   } catch {
@@ -721,4 +720,5 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
       ...extraHeaders
     }
   })
-  }
+}
+  
