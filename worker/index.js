@@ -242,3 +242,251 @@ async function handleEstoque(request, url, ctx) {
   if (cached) {
     return cached
   }
+let estoqueLoja261
+  try {
+    estoqueLoja261 = await buscarEstoqueMersan(referencia)
+  } catch {
+    return jsonResponse(
+      { error: 'Não foi possível conectar à API da Mersan.' },
+      502
+    )
+  }
+
+  const payload = {
+    referencia,
+    loja: LOJA,
+    estoque: estoqueLoja261,
+    atualizadoEm: new Date().toISOString()
+  }
+
+  const response = jsonResponse(payload, 200, {
+    'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`
+  })
+
+  ctx.waitUntil(cache.put(cacheKey, response.clone()))
+
+  return response
+}
+
+async function handleProdutoPage(request, url, env, ctx) {
+  const codigo = decodeURIComponent(url.pathname.replace('/produto/', ''))
+
+  const cache = caches.default
+  const cacheKey = new Request(url.toString(), request)
+
+  const cached = await cache.match(cacheKey)
+  if (cached) {
+    return cached
+  }
+
+  const baseRequest = new Request(new URL('/', request.url), request)
+  const htmlResp = await env.ASSETS.fetch(baseRequest)
+  let html = await htmlResp.text()
+
+  if (!codigo) {
+    return new Response(html, htmlResp)
+  }
+
+  let dadosProduto = null
+  try {
+    dadosProduto = await buscarDadosProdutoMersan(codigo)
+  } catch {
+    return new Response(html, htmlResp)
+  }
+
+  const titulo = `${dadosProduto.nome} - Mersan Calçados`
+  const descricao = 'Mersan Calçados • Loja 261'
+  const chaveFoto = normalizarCodigo(codigo)
+  const imagemUrl = `${url.origin}/produto-foto/${encodeURIComponent(chaveFoto)}`
+
+  html = html
+    .replace(
+      '<title>Mersan Calçados - Catálogo Loja 261</title>',
+      `<title>${escapeHtml(titulo)}</title>`
+    )
+    .replaceAll(
+      'content="Mersan Calçados • Loja 261"',
+      `content="${escapeHtml(titulo)}"`
+    )
+    .replaceAll(
+      'content="Consulte produtos e estoque da Mersan Calçados - Loja 261"',
+      `content="${escapeHtml(descricao)}"`
+    )
+    .replace(
+      '<meta property="og:image" content="/icons/icon-512.svg" />',
+      `<meta property="og:image" content="${imagemUrl}" />\n    <meta property="og:image:type" content="image/jpeg" />`
+    )
+
+  const response = new Response(html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=UTF-8',
+      'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`
+    }
+  })
+
+  ctx.waitUntil(cache.put(cacheKey, response.clone()))
+
+  return response
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function normalizarCodigo(codigo) {
+  return codigo.trim().replace(/\s+/g, '_')
+}
+
+function referenciaParaCliente(referencia) {
+  if (!referencia) return referencia
+  return referencia.replace(/[-\s]\d{2,3}$/, '').trim()
+}
+
+async function handleServirFoto(url, env) {
+  const codigo = decodeURIComponent(url.pathname.replace('/produto-foto/', ''))
+  const chave = normalizarCodigo(codigo)
+
+  const resultado = await env.FOTOS.getWithMetadata(chave, 'arrayBuffer')
+
+  if (!resultado || !resultado.value) {
+    return new Response('Foto não encontrada', { status: 404 })
+  }
+
+  return new Response(resultado.value, {
+    headers: {
+      'Content-Type': resultado.metadata?.contentType || 'image/jpeg',
+      'Cache-Control': 'public, max-age=86400'
+    }
+  })
+}
+
+function autenticado(request, env) {
+  const senha = request.headers.get('X-Admin-Password')
+  return Boolean(env.ADMIN_PASSWORD) && senha === env.ADMIN_PASSWORD
+}
+
+async function handleAdminLogin(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+  return jsonResponse({ ok: true })
+}
+
+async function handleAdminUploadFoto(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const form = await request.formData()
+  const codigo = form.get('codigo')
+  const arquivo = form.get('arquivo')
+  const categoria = form.get('categoria') || ''
+
+  if (!codigo || !arquivo) {
+    return jsonResponse({ error: 'Envie "codigo" e "arquivo".' }, 400)
+  }
+
+  const chave = normalizarCodigo(codigo)
+  const bytes = await arquivo.arrayBuffer()
+
+  if (bytes.byteLength > 24 * 1024 * 1024) {
+    return jsonResponse({ error: 'Arquivo grande demais (máximo 24MB).' }, 400)
+  }
+
+  await env.FOTOS.put(chave, bytes, {
+    metadata: {
+      contentType: arquivo.type || 'image/jpeg',
+      tamanho: bytes.byteLength,
+      categoria
+    }
+  })
+
+  return jsonResponse({ ok: true, codigo: chave })
+}
+
+async function handleAdminAtualizarFoto(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const corpo = await request.json().catch(() => null)
+  const codigo = corpo?.codigo
+  const categoria = corpo?.categoria || ''
+
+  if (!codigo) {
+    return jsonResponse({ error: 'Parâmetro "codigo" é obrigatório.' }, 400)
+  }
+
+  const chave = normalizarCodigo(codigo)
+  const resultado = await env.FOTOS.getWithMetadata(chave, 'arrayBuffer')
+
+  if (!resultado || !resultado.value) {
+    return jsonResponse({ error: 'Foto não encontrada para esse código.' }, 404)
+  }
+
+  await env.FOTOS.put(chave, resultado.value, {
+    metadata: {
+      contentType: resultado.metadata?.contentType || 'image/jpeg',
+      tamanho: resultado.metadata?.tamanho || resultado.value.byteLength,
+      categoria
+    }
+  })
+
+  return jsonResponse({ ok: true, codigo: chave })
+}
+
+async function handleAdminRenomearFoto(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const corpo = await request.json().catch(() => null)
+  const codigoAntigo = corpo?.codigoAntigo
+  const codigoNovo = corpo?.codigoNovo
+
+  if (!codigoAntigo || !codigoNovo) {
+    return jsonResponse({ error: 'Envie "codigoAntigo" e "codigoNovo".' }, 400)
+  }
+
+  const chaveAntiga = normalizarCodigo(codigoAntigo)
+  const chaveNova = normalizarCodigo(codigoNovo)
+
+  if (chaveAntiga === chaveNova) {
+    return jsonResponse({ ok: true, codigo: chaveNova })
+  }
+
+  const resultado = await env.FOTOS.getWithMetadata(chaveAntiga, 'arrayBuffer')
+  if (!resultado || !resultado.value) {
+    return jsonResponse({ error: 'Foto não encontrada para o código atual.' }, 404)
+  }
+
+  const jaExiste = await env.FOTOS.get(chaveNova)
+  if (jaExiste) {
+    return jsonResponse(
+      { error: 'Já existe uma foto cadastrada com essa referência. Exclua a antiga primeiro se quiser substituir.' },
+      409
+    )
+  }
+
+  await env.FOTOS.put(chaveNova, resultado.value, {
+    metadata: resultado.metadata || {}
+  })
+  await env.FOTOS.delete(chaveAntiga)
+
+  return jsonResponse({ ok: true, codigo: chaveNova })
+}
+
+async function handleAdminExcluirFoto(request, url, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const codigo = url.searchParams.get('codigo')
+  if (!codigo) {
+    return jsonResponse({ error: 'Parâmetro "codigo" é obrigatório.' }, 400)
