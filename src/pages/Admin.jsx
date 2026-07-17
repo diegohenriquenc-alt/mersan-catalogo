@@ -68,6 +68,7 @@ function PainelFotos({ senha }) {
   const [arquivo, setArquivo] = useState(null)
   const [categoria, setCategoria] = useState('')
   const [promocao, setPromocao] = useState(false)
+  const [editando, setEditando] = useState(null)
   const [preview, setPreview] = useState(null)
   const [status, setStatus] = useState(null)
   const [enviando, setEnviando] = useState(false)
@@ -254,28 +255,41 @@ function PainelFotos({ senha }) {
 
   async function handleEnviar(e) {
     e.preventDefault()
-    if (!codigo || !arquivo) return
+    if (!codigo) return
+    if (!arquivo && !editando) return
 
     setEnviando(true)
     setStatus(null)
 
-    const form = new FormData()
-    form.append('codigo', codigo)
-    form.append('categoria', categoria)
-    form.append('promocao', promocao ? 'true' : 'false')
     try {
-      const arquivoComprimido = await comprimirImagem(arquivo)
-      form.append('arquivo', arquivoComprimido)
-    } catch {
-      form.append('arquivo', arquivo)
-    }
+      let resp
+      if (arquivo) {
+        const form = new FormData()
+        form.append('codigo', codigo)
+        form.append('categoria', categoria)
+        form.append('promocao', promocao ? 'true' : 'false')
+        try {
+          const arquivoComprimido = await comprimirImagem(arquivo)
+          form.append('arquivo', arquivoComprimido)
+        } catch {
+          form.append('arquivo', arquivo)
+        }
+        resp = await fetch('/api/admin/foto', {
+          method: 'POST',
+          headers: { 'X-Admin-Password': senha },
+          body: form
+        })
+      } else {
+        resp = await fetch('/api/admin/foto', {
+          method: 'PATCH',
+          headers: {
+            'X-Admin-Password': senha,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ codigo, categoria, promocao })
+        })
+      }
 
-    try {
-      const resp = await fetch('/api/admin/foto', {
-        method: 'POST',
-        headers: { 'X-Admin-Password': senha },
-        body: form
-      })
       const data = await resp.json()
       if (!resp.ok) {
         setStatus({ tipo: 'erro', texto: data.error || 'Falha ao enviar.' })
@@ -286,6 +300,7 @@ function PainelFotos({ senha }) {
         setCategoria('')
         setPromocao(false)
         setPreview(null)
+        setEditando(null)
         carregarLista()
       }
     } catch {
@@ -293,6 +308,27 @@ function PainelFotos({ senha }) {
     } finally {
       setEnviando(false)
     }
+  }
+
+  function handleEditar(foto) {
+    setEditando(foto.codigo)
+    setCodigo(foto.codigo)
+    setCategoria(foto.categoria || '')
+    setPromocao(Boolean(foto.promocao))
+    setArquivo(null)
+    setPreview(`/produto-foto/${encodeURIComponent(foto.codigo)}`)
+    setStatus(null)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function handleCancelarEdicao() {
+    setEditando(null)
+    setCodigo('')
+    setCategoria('')
+    setPromocao(false)
+    setArquivo(null)
+    setPreview(null)
+    setStatus(null)
   }
 
   async function handleExcluir(codigoFoto) {
@@ -324,6 +360,12 @@ function PainelFotos({ senha }) {
         </div>
 
         <form onSubmit={handleEnviar} style={styles.formUpload}>
+          {editando && (
+            <p style={styles.editandoAviso}>
+              ✏️ Editando "{editando}" — escolha uma foto nova só se quiser trocá-la.
+            </p>
+          )}
+
           <label style={styles.label}>
             Código do produto (código de barras, SKU ou referência)
             <div style={styles.linhaCodigo}>
@@ -333,6 +375,7 @@ function PainelFotos({ senha }) {
                 onChange={(e) => setCodigo(e.target.value)}
                 placeholder="Ex: 7770005662888"
                 style={{ ...styles.input, flex: 1 }}
+                disabled={Boolean(editando)}
               />
               <button type="button" onClick={abrirLeitor} style={styles.botaoBipar}>
                 📷 Bipar
@@ -342,7 +385,7 @@ function PainelFotos({ senha }) {
           </label>
 
           <label style={styles.label}>
-            Foto
+            Foto {editando && '(opcional — deixe em branco para manter a atual)'}
             <input type="file" accept="image/*" onChange={handleArquivo} style={styles.inputArquivo} />
           </label>
 
@@ -377,9 +420,19 @@ function PainelFotos({ senha }) {
             <p style={status.tipo === 'erro' ? styles.erro : styles.sucesso}>{status.texto}</p>
           )}
 
-          <button type="submit" style={styles.botao} disabled={enviando || !codigo || !arquivo}>
-            {enviando ? 'Enviando…' : 'Salvar foto'}
+          <button
+            type="submit"
+            style={styles.botao}
+            disabled={enviando || !codigo || (!arquivo && !editando)}
+          >
+            {enviando ? 'Salvando…' : editando ? 'Salvar alterações' : 'Salvar foto'}
           </button>
+
+          {editando && (
+            <button type="button" onClick={handleCancelarEdicao} style={styles.botaoSecundario}>
+              Cancelar edição
+            </button>
+          )}
         </form>
 
         <div style={styles.listaBox}>
@@ -412,6 +465,9 @@ function PainelFotos({ senha }) {
                     </span>
                   )}
                 </span>
+                <button onClick={() => handleEditar(f)} style={styles.botaoEditar}>
+                  Editar
+                </button>
                 <button onClick={() => handleExcluir(f.codigo)} style={styles.botaoExcluir}>
                   Excluir
                 </button>
@@ -583,6 +639,16 @@ const styles = {
     borderRadius: '999px',
     cursor: 'pointer'
   },
+  botaoSecundario: {
+    padding: '14px',
+    fontSize: '15px',
+    fontWeight: 700,
+    color: '#111111',
+    background: '#f2f2f2',
+    border: 'none',
+    borderRadius: '10px',
+    cursor: 'pointer'
+  },
   erro: {
     color: '#d92d20',
     fontSize: '13px',
@@ -633,59 +699,18 @@ const styles = {
     color: '#6b6b6b',
     fontWeight: 400
   },
-  botaoExcluir: {
+  botaoEditar: {
     padding: '6px 12px',
     fontSize: '12px',
     fontWeight: 600,
-    color: '#d92d20',
-    background: '#fff0ef',
+    color: '#0057ff',
+    background: '#f2f6ff',
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer'
   },
-  linhaCodigo: {
-    display: 'flex',
-    gap: '8px'
-  },
-  botaoBipar: {
-    padding: '0 16px',
-    fontSize: '14px',
-    fontWeight: 700,
+  editandoAviso: {
+    fontSize: '13px',
+    fontWeight: 600,
     color: '#0057ff',
-    background: '#f2f6ff',
-    border: 'none',
-    borderRadius: '10px',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap'
-  },
-  scannerOverlay: {
-    position: 'fixed',
-    inset: 0,
-    background: '#000000',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '16px',
-    zIndex: 1000
-  },
-  scannerVideo: {
-    width: '100%',
-    maxWidth: '480px',
-    borderRadius: '12px'
-  },
-  scannerDica: {
-    color: '#ffffff',
-    fontSize: '14px'
-  },
-  scannerCancelar: {
-    padding: '12px 24px',
-    fontSize: '15px',
-    fontWeight: 700,
-    color: '#111111',
-    background: '#ffffff',
-    border: 'none',
-    borderRadius: '999px',
-    cursor: 'pointer'
-  }
-                              }
+ 
