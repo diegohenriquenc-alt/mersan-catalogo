@@ -74,7 +74,47 @@ export default {
     }
 
     return env.ASSETS.fetch(request)
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(preAquecerCache(env))
   }
+}
+
+async function preAquecerCache(env) {
+  const listagem = await env.FOTOS.list({ limit: 200 })
+  const codigos = listagem.keys
+    .map((k) => k.name)
+    .filter((nome) => nome !== VENDEDORES_CHAVE)
+
+  const cache = caches.default
+  const origem = 'https://mersan-catalogo.diegohenriquenc.workers.dev'
+
+  await Promise.all(
+    codigos.map(async (codigo) => {
+      try {
+        const dados = await buscarDadosProdutoMersan(codigo)
+
+        const urlProduto = `${origem}/api/produto?termo=${encodeURIComponent(codigo)}`
+        const respostaProduto = jsonResponse(dados, 200, {
+          'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`
+        })
+        await cache.put(new Request(urlProduto), respostaProduto)
+
+        if (dados.referencia) {
+          const estoque = await buscarEstoqueMersan(dados.referencia)
+          const urlEstoque = `${origem}/api/estoque?referencia=${encodeURIComponent(dados.referencia)}`
+          const respostaEstoque = jsonResponse(
+            { referencia: dados.referencia, loja: LOJA, estoque, atualizadoEm: new Date().toISOString() },
+            200,
+            { 'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}` }
+          )
+          await cache.put(new Request(urlEstoque), respostaEstoque)
+        }
+      } catch {
+      }
+    })
+  )
 }
 
 async function buscarDadosProdutoMersan(termo, signal) {
@@ -98,10 +138,6 @@ async function buscarDadosProdutoMersan(termo, signal) {
 
   const item = lista.find((p) => p.cdEmpresa === LOJA) || lista[0]
 
-  // A matriz (empresa 1) cadastra promoções que valem pra todas as lojas,
-  // mas às vezes a linha específica da loja 261 ainda não reflete esse
-  // preço promocional. Nesses casos, usamos o preço promocional da matriz
-  // mesmo assim — o preço normal e todo o resto continuam vindo da 261.
   const itemMatriz = lista.find((p) => p.cdEmpresa === 1)
   let precoPromocao = item.vlPrecoPromocao
   if ((!precoPromocao || precoPromocao <= 0) && itemMatriz?.vlPrecoPromocao > 0) {
@@ -165,6 +201,33 @@ async function handleProduto(request, url, ctx) {
   return response
 }
 
+async function buscarEstoqueMersan(referencia, signal) {
+  const mersanUrl = `${MERSAN_BASE}/buscapreco/estoque/${encodeURIComponent(referencia)}/${LOJA}`
+
+  const resp = await fetch(mersanUrl, {
+    headers: { Accept: 'application/json' },
+    signal
+  })
+
+  if (!resp.ok) {
+    throw new Error(`A API da Mersan retornou status ${resp.status}.`)
+  }
+
+  const registros = await resp.json()
+  const lista = Array.isArray(registros) ? registros : [registros]
+
+  const porTamanho = new Map()
+  for (const item of lista) {
+    if (!item || item.cd_empresa !== LOJA || Number(item.qt_stock) <= 0) continue
+    const tamanho = item.ds_tamanho
+    porTamanho.set(tamanho, (porTamanho.get(tamanho) || 0) + Number(item.qt_stock))
+  }
+
+  return Array.from(porTamanho.entries())
+    .map(([tamanho, pares]) => ({ tamanho, pares }))
+    .sort((a, b) => parseFloat(a.tamanho) - parseFloat(b.tamanho))
+}
+
 async function handleEstoque(request, url, ctx) {
   const referencia = url.searchParams.get('referencia')
 
@@ -179,39 +242,15 @@ async function handleEstoque(request, url, ctx) {
   if (cached) {
     return cached
   }
-
-  const mersanUrl = `${MERSAN_BASE}/buscapreco/estoque/${encodeURIComponent(referencia)}/${LOJA}`
-
-  let registros
+  let estoqueLoja261
   try {
-    const resp = await fetch(mersanUrl, {
-      headers: { Accept: 'application/json' }
-    })
-
-    if (!resp.ok) {
-      return jsonResponse(
-        { error: `A API da Mersan retornou status ${resp.status}.` },
-        502
-      )
-    }
-
-    registros = await resp.json()
-  } catch (err) {
+    estoqueLoja261 = await buscarEstoqueMersan(referencia)
+  } catch {
     return jsonResponse(
       { error: 'Não foi possível conectar à API da Mersan.' },
       502
     )
   }
-
-  const lista = Array.isArray(registros) ? registros : [registros]
-
-  const estoqueLoja261 = lista
-    .filter((item) => item && item.cd_empresa === LOJA && Number(item.qt_stock) > 0)
-    .map((item) => ({
-      tamanho: item.ds_tamanho,
-      pares: item.qt_stock
-    }))
-    .sort((a, b) => parseFloat(a.tamanho) - parseFloat(b.tamanho))
 
   const payload = {
     referencia,
@@ -257,7 +296,7 @@ async function handleProdutoPage(request, url, env, ctx) {
 
   const titulo = `${dadosProduto.nome} - Mersan Calçados`
   const descricao = 'Mersan Calçados • Loja 261'
-  const chaveFoto = normalizarCodigo(dadosProduto.codigoBarras || codigo)
+  const chaveFoto = normalizarCodigo(codigo)
   const imagemUrl = `${url.origin}/produto-foto/${encodeURIComponent(chaveFoto)}`
 
   html = html
@@ -451,9 +490,7 @@ async function handleAdminExcluirFoto(request, url, env) {
   const codigo = url.searchParams.get('codigo')
   if (!codigo) {
     return jsonResponse({ error: 'Parâmetro "codigo" é obrigatório.' }, 400)
-  }
-
-  await env.FOTOS.delete(normalizarCodigo(codigo))
+    await env.FOTOS.delete(normalizarCodigo(codigo))
   return jsonResponse({ ok: true })
 }
 
@@ -589,6 +626,7 @@ async function handleIrVendedor(request, url, env) {
   const vendedorId = url.searchParams.get('vendedor')
   const codigo = url.searchParams.get('codigo')
   const tamanho = url.searchParams.get('tamanho')
+  const parcelasEscolhidas = Number(url.searchParams.get('parcelas')) || null
 
   if (!vendedorId || !codigo) {
     return new Response('Link inválido.', { status: 400 })
@@ -629,7 +667,6 @@ async function handleIrVendedor(request, url, env) {
     precoOriginal = dados.precoOriginal
     emPromocao = dados.emPromocao
   } catch {
-    // Sem dados do produto (demorou, ou deu erro): segue só com o código.
   }
 
   const linhas = [
@@ -651,9 +688,13 @@ async function handleIrVendedor(request, url, env) {
     }
 
     const maxParcelas = Math.min(MAX_PARCELAS, Math.max(1, Math.floor(preco / PARCELA_MINIMA)))
-    if (maxParcelas > 1) {
-      const valorParcela = (preco / maxParcelas).toFixed(2).replace('.', ',')
-      linhas.push(`Parcelamento: ${maxParcelas}x de R$ ${valorParcela}`)
+    const parcelasFinal =
+      parcelasEscolhidas && parcelasEscolhidas >= 1 && parcelasEscolhidas <= maxParcelas
+        ? parcelasEscolhidas
+        : maxParcelas
+    if (parcelasFinal > 1) {
+      const valorParcela = (preco / parcelasFinal).toFixed(2).replace('.', ',')
+      linhas.push(`Parcelamento: ${parcelasFinal}x de R$ ${valorParcela}`)
     }
   }
 
@@ -680,4 +721,4 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
       ...extraHeaders
     }
   })
-}
+  }
