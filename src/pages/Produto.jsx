@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import Logo from '../components/Logo.jsx'
-import ProductResult from '../components/ProductResult.jsx'
 import ApiService from '../services/api.js'
 
+const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
 const MAX_PARCELAS = 10
+
+function formatarPreco(preco) {
+  return preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
 
 export default function Produto() {
   const { codigo } = useParams()
@@ -13,11 +16,10 @@ export default function Produto() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [produto, setProduto] = useState(null)
-  const [copiado, setCopiado] = useState(false)
 
   const [vendedores, setVendedores] = useState([])
   const [tamanhoEscolhido, setTamanhoEscolhido] = useState(null)
-  const [parcelasEscolhidas, setParcelasEscolhidas] = useState(null)
+  const [vendedorEscolhido, setVendedorEscolhido] = useState(null)
 
   useEffect(() => {
     let cancelado = false
@@ -26,7 +28,7 @@ export default function Produto() {
     setError(null)
     setProduto(null)
     setTamanhoEscolhido(null)
-    setParcelasEscolhidas(null)
+    setVendedorEscolhido(null)
 
     ApiService.buscarProduto(codigo)
       .then((data) => {
@@ -57,197 +59,231 @@ export default function Produto() {
     }
   }, [])
 
-  const urlProduto = typeof window !== 'undefined' ? window.location.href : ''
-
-  async function handleCompartilhar() {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: produto?.nome || 'Mersan Calçados',
-          text: 'Mersan Calçados • Loja 261',
-          url: urlProduto
-        })
-      } catch {
-        // Pessoa cancelou o compartilhamento — não faz nada.
-      }
-    } else {
-      handleCopiarLink()
-    }
-  }
-
-  async function handleCopiarLink() {
-    try {
-      await navigator.clipboard.writeText(urlProduto)
-      setCopiado(true)
-      setTimeout(() => setCopiado(false), 2000)
-    } catch {
-      // Sem permissão de clipboard — a pessoa pode copiar direto da barra de endereço.
-    }
-  }
-
   const maxParcelas = produto?.preco
     ? Math.min(MAX_PARCELAS, Math.max(1, Math.floor(produto.preco / PARCELA_MINIMA)))
     : 1
 
-  const opcoesParcelas = Array.from({ length: maxParcelas }, (_, i) => i + 1)
-
-  function linkPedido(vendedorId) {
-    const params = new URLSearchParams({
-      vendedor: vendedorId,
-      codigo,
-      tamanho: tamanhoEscolhido,
-      parcelas: String(parcelasEscolhidas)
-    })
-    return `/ir-vendedor?${params.toString()}`
-  }
+  const linkPedidoPronto = tamanhoEscolhido && vendedorEscolhido
+  const paramsPedido = linkPedidoPronto
+    ? new URLSearchParams({
+        vendedor: vendedorEscolhido,
+        codigo,
+        tamanho: tamanhoEscolhido
+      }).toString()
+    : ''
 
   return (
-    <main style={styles.main}>
-      <div style={styles.content}>
-        <Logo />
-
-        {loading && <p style={styles.status}>Consultando…</p>}
-        {error && <p style={styles.error}>{error}</p>}
-
-        {produto && (
-          <>
-            <ProductResult produto={produto} ocultarEstoque />
-
-            {produto.estoque?.length > 0 ? (
-              <div style={styles.secao}>
-                <h2 style={styles.secaoTitulo}>1. Escolha o tamanho</h2>
-                <div style={styles.opcoes}>
-                  {produto.estoque.map((item) => (
-                    <button
-                      key={item.tamanho}
-                      onClick={() => {
-                        setTamanhoEscolhido(item.tamanho)
-                        setParcelasEscolhidas(null)
-                      }}
-                      style={
-                        tamanhoEscolhido === item.tamanho
-                          ? styles.opcaoSelecionada
-                          : styles.opcao
-                      }
-                    >
-                      {item.tamanho}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <p style={styles.dica}>Sem tamanhos disponíveis nesta loja no momento.</p>
-            )}
-
-            {tamanhoEscolhido && produto.preco != null && (
-              <div style={styles.secao}>
-                <h2 style={styles.secaoTitulo}>2. Escolha o parcelamento</h2>
-                <div style={styles.opcoes}>
-                  {opcoesParcelas.map((n) => (
-                    <button
-                      key={n}
-                      onClick={() => setParcelasEscolhidas(n)}
-                      style={
-                        parcelasEscolhidas === n ? styles.opcaoSelecionada : styles.opcao
-                      }
-                    >
-                      {n === 1
-                        ? `À vista R$ ${produto.preco.toFixed(2).replace('.', ',')}`
-                        : `${n}x de R$ ${(produto.preco / n).toFixed(2).replace('.', ',')}`}
-                    </button>
-                  ))}
-                </div>
-                <p style={styles.dicaPequena}>Parcela mínima: R$ 29,99 • até 10x</p>
-              </div>
-            )}
-
-            {tamanhoEscolhido && parcelasEscolhidas && (
-              <div style={styles.secao}>
-                <h2 style={styles.secaoTitulo}>3. Escolha o vendedor</h2>
-                {vendedores.length === 0 ? (
-                  <p style={styles.dica}>Nenhum vendedor cadastrado ainda.</p>
-                ) : (
-                  <div style={styles.opcoes}>
-                    {vendedores.map((v) => (
-                      <a key={v.id} href={linkPedido(v.id)} style={styles.botaoVendedor}>
-                        {v.nome}
-                      </a>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div style={styles.botoes}>
-              <button onClick={handleCompartilhar} style={styles.botaoPrimario}>
-                Compartilhar
-              </button>
-              <button onClick={handleCopiarLink} style={styles.botaoSecundario}>
-                {copiado ? 'Link copiado!' : 'Copiar link'}
-              </button>
-              <Link to="/" style={styles.botaoVoltar}>
-                Voltar
-              </Link>
-            </div>
-          </>
-        )}
-
-        {!loading && !produto && !error && (
-          <Link to="/" style={styles.botaoVoltar}>
-            Voltar para a busca
-          </Link>
-        )}
+    <main style={styles.pagina}>
+      <div style={styles.topo}>
+        <Link to="/" style={styles.voltar}>
+          ← Voltar ao catálogo
+        </Link>
       </div>
+
+      {loading && <p style={styles.status}>Consultando…</p>}
+      {error && <p style={styles.erro}>{error}</p>}
+
+      {produto && (
+        <div style={styles.conteudo}>
+          <div style={styles.fotoWrapper}>
+            {produto.emPromocao && <span style={styles.selo}>PROMOÇÃO</span>}
+            <img
+              src={produto.foto || IMAGEM_PADRAO}
+              alt={produto.nome}
+              style={styles.foto}
+              onError={(e) => {
+                e.currentTarget.onerror = null
+                e.currentTarget.src = IMAGEM_PADRAO
+              }}
+            />
+          </div>
+
+          <div style={styles.info}>
+            <h1 style={styles.nome}>{produto.nome}</h1>
+
+            <div style={styles.precoLinha}>
+              {produto.emPromocao && produto.precoOriginal > produto.preco && (
+                <span style={styles.precoOriginal}>{formatarPreco(produto.precoOriginal)}</span>
+              )}
+              {produto.preco != null && <span style={styles.preco}>{formatarPreco(produto.preco)}</span>}
+            </div>
+
+            {produto.preco != null && maxParcelas > 1 && (
+              <p style={styles.parcelamento}>
+                em até {maxParcelas}x de R$ {(produto.preco / maxParcelas).toFixed(2).replace('.', ',')} sem juros
+              </p>
+            )}
+          </div>
+
+          {produto.estoque?.length > 0 && (
+            <div style={styles.secao}>
+              <h2 style={styles.secaoTitulo}>Escolha o tamanho</h2>
+              <div style={styles.opcoes}>
+                {produto.estoque.map((item) => (
+                  <button
+                    key={item.tamanho}
+                    onClick={() => setTamanhoEscolhido(item.tamanho)}
+                    style={tamanhoEscolhido === item.tamanho ? styles.opcaoSelecionada : styles.opcao}
+                  >
+                    {item.tamanho}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!produto.estoque?.length && (
+            <p style={styles.dica}>Sem tamanhos disponíveis nesta loja no momento.</p>
+          )}
+
+          {tamanhoEscolhido && vendedores.length > 0 && (
+            <div style={styles.secao}>
+              <h2 style={styles.secaoTitulo}>Escolha o vendedor</h2>
+              <div style={styles.opcoes}>
+                {vendedores.map((v) => (
+                  <button
+                    key={v.id}
+                    onClick={() => setVendedorEscolhido(v.id)}
+                    style={vendedorEscolhido === v.id ? styles.opcaoSelecionada : styles.opcao}
+                  >
+                    {v.nome}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {tamanhoEscolhido && vendedores.length === 0 && (
+            <p style={styles.dica}>Nenhum vendedor cadastrado ainda.</p>
+          )}
+
+          <div style={styles.rodape}>
+            {linkPedidoPronto ? (
+              <a href={`/ir-vendedor?${paramsPedido}`} style={styles.botaoWhatsApp}>
+                Falar com o vendedor no WhatsApp
+              </a>
+            ) : (
+              <button disabled style={styles.botaoWhatsAppDesabilitado}>
+                Falar com o vendedor no WhatsApp
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!loading && !produto && !error && (
+        <Link to="/" style={styles.voltar}>
+          Voltar para o catálogo
+        </Link>
+      )}
     </main>
   )
 }
 
 const styles = {
-  main: {
+  pagina: {
     minHeight: '100dvh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '24px'
+    background: '#ffffff',
+    paddingBottom: '100px'
   },
-  content: {
-    width: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '20px'
+  topo: {
+    position: 'sticky',
+    top: 0,
+    zIndex: 5,
+    background: '#ffffff',
+    borderBottom: '1px solid #eeeeee',
+    padding: '12px 14px'
+  },
+  voltar: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#111111',
+    textDecoration: 'none'
   },
   status: {
     fontSize: '14px',
-    color: '#6b6b6b'
+    color: '#6b6b6b',
+    textAlign: 'center',
+    padding: '30px 0'
   },
-  error: {
+  erro: {
     color: '#d92d20',
     fontSize: '14px',
     textAlign: 'center',
-    maxWidth: '480px'
+    padding: '30px 14px'
+  },
+  conteudo: {
+    display: 'flex',
+    flexDirection: 'column'
+  },
+  fotoWrapper: {
+    position: 'relative',
+    width: '100%',
+    aspectRatio: '1 / 1',
+    background: '#fafafa'
+  },
+  foto: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'contain'
+  },
+  selo: {
+    position: 'absolute',
+    top: '14px',
+    left: '14px',
+    background: '#d92d20',
+    color: '#ffffff',
+    fontSize: '12px',
+    fontWeight: 800,
+    letterSpacing: '0.03em',
+    padding: '5px 10px',
+    borderRadius: '999px'
+  },
+  info: {
+    padding: '18px 16px 8px'
+  },
+  nome: {
+    fontSize: '19px',
+    fontWeight: 700,
+    margin: '0 0 10px'
+  },
+  precoLinha: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: '10px',
+    flexWrap: 'wrap'
+  },
+  precoOriginal: {
+    fontSize: '15px',
+    color: '#9a9a9a',
+    textDecoration: 'line-through'
+  },
+  preco: {
+    fontSize: '26px',
+    fontWeight: 800,
+    color: '#111111'
+  },
+  parcelamento: {
+    fontSize: '13px',
+    color: '#6b6b6b',
+    margin: '4px 0 0'
   },
   secao: {
-    width: '100%',
-    maxWidth: '480px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px'
+    padding: '18px 16px 0'
   },
   secaoTitulo: {
-    fontSize: '13px',
+    fontSize: '14px',
     fontWeight: 700,
-    letterSpacing: '0.02em',
-    color: '#111111',
-    margin: 0
+    margin: '0 0 10px'
   },
   opcoes: {
     display: 'flex',
     flexWrap: 'wrap',
-    gap: '8px'
+    gap: '10px'
   },
   opcao: {
-    padding: '10px 16px',
+    minWidth: '52px',
+    padding: '12px 16px',
     fontSize: '14px',
     fontWeight: 600,
     color: '#111111',
@@ -257,70 +293,54 @@ const styles = {
     cursor: 'pointer'
   },
   opcaoSelecionada: {
-    padding: '10px 16px',
+    minWidth: '52px',
+    padding: '12px 16px',
     fontSize: '14px',
     fontWeight: 700,
     color: '#ffffff',
-    background: '#0057ff',
-    border: '1px solid #0057ff',
+    background: '#111111',
+    border: '1px solid #111111',
     borderRadius: '999px',
     cursor: 'pointer'
-  },
-  botaoVendedor: {
-    padding: '12px 20px',
-    fontSize: '14px',
-    fontWeight: 700,
-    color: '#ffffff',
-    background: '#25D366',
-    border: 'none',
-    borderRadius: '999px',
-    cursor: 'pointer',
-    textDecoration: 'none'
   },
   dica: {
     fontSize: '13px',
     color: '#6b6b6b',
+    padding: '18px 16px 0',
+    margin: 0
+  },
+  rodape: {
+    position: 'fixed',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: '#ffffff',
+    borderTop: '1px solid #eeeeee',
+    padding: '12px 16px',
+    zIndex: 10
+  },
+  botaoWhatsApp: {
+    display: 'block',
     textAlign: 'center',
-    margin: 0
-  },
-  dicaPequena: {
-    fontSize: '12px',
-    color: '#6b6b6b',
-    margin: 0
-  },
-  botoes: {
-    width: '100%',
-    maxWidth: '480px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px'
-  },
-  botaoPrimario: {
-    padding: '14px',
-    fontSize: '15px',
-    fontWeight: 700,
+    padding: '16px',
+    fontSize: '16px',
+    fontWeight: 800,
     color: '#ffffff',
-    background: '#0057ff',
-    border: 'none',
-    borderRadius: '10px',
-    cursor: 'pointer'
-  },
-  botaoSecundario: {
-    padding: '14px',
-    fontSize: '15px',
-    fontWeight: 700,
-    color: '#111111',
-    background: '#f2f2f2',
-    border: 'none',
-    borderRadius: '10px',
-    cursor: 'pointer'
-  },
-  botaoVoltar: {
-    padding: '14px',
-    fontSize: '15px',
-    fontWeight: 600,
-    color: '#6b6b6b',
-    textAlign: 'center',
+    background: '#25D366',
+    borderRadius: '999px',
     textDecoration: 'none'
+  },
+  botaoWhatsAppDesabilitado: {
+    display: 'block',
+    width: '100%',
+    textAlign: 'center',
+    padding: '16px',
+    fontSize: '16px',
+    fontWeight: 800,
+    color: '#9a9a9a',
+    background: '#e6e6e6',
+    border: 'none',
+    borderRadius: '999px',
+    cursor: 'not-allowed'
   }
-}
+      }
