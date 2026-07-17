@@ -130,6 +130,16 @@ async function handleProduto(request, url, ctx) {
     return jsonResponse({ error: 'Parâmetro "termo" é obrigatório.' }, 400)
   }
 
+  if (url.searchParams.has('debug')) {
+    const mersanUrl = `${MERSAN_BASE}/buscapreco/${encodeURIComponent(termo)}/${LOJA}`
+    const resp = await fetch(mersanUrl, { headers: { Accept: 'application/json' } })
+    const texto = await resp.text()
+    return new Response(texto, {
+      status: resp.status,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+
   const cache = caches.default
   const cacheKey = new Request(url.toString(), request)
 
