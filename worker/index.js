@@ -98,14 +98,24 @@ async function buscarDadosProdutoMersan(termo, signal) {
 
   const item = lista.find((p) => p.cdEmpresa === LOJA) || lista[0]
 
-  const emPromocao = item.vlPrecoPromocao > 0 && item.vlPrecoPromocao < item.vlPreco
+  // A matriz (empresa 1) cadastra promoções que valem pra todas as lojas,
+  // mas às vezes a linha específica da loja 261 ainda não reflete esse
+  // preço promocional. Nesses casos, usamos o preço promocional da matriz
+  // mesmo assim — o preço normal e todo o resto continuam vindo da 261.
+  const itemMatriz = lista.find((p) => p.cdEmpresa === 1)
+  let precoPromocao = item.vlPrecoPromocao
+  if ((!precoPromocao || precoPromocao <= 0) && itemMatriz?.vlPrecoPromocao > 0) {
+    precoPromocao = itemMatriz.vlPrecoPromocao
+  }
+
+  const emPromocao = precoPromocao > 0 && precoPromocao < item.vlPreco
 
   return {
     referencia: item.cdReferencia,
     nome: item.dsProduto,
     cor: item.cdCor,
     tamanho: item.dsTamanho,
-    preco: emPromocao ? item.vlPrecoPromocao : item.vlPreco,
+    preco: emPromocao ? precoPromocao : item.vlPreco,
     precoOriginal: item.vlPreco,
     emPromocao,
     codigoBarras: item.cdProduto,
@@ -322,7 +332,8 @@ async function handleAdminLogin(request, env) {
 async function handleAdminUploadFoto(request, env) {
   if (!autenticado(request, env)) {
     return jsonResponse({ error: 'Senha incorreta.' }, 401)
-      }
+  }
+
   const form = await request.formData()
   const codigo = form.get('codigo')
   const arquivo = form.get('arquivo')
@@ -659,4 +670,4 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
       ...extraHeaders
     }
   })
-  }
+}
