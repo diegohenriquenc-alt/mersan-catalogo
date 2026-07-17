@@ -53,8 +53,11 @@ export default {
       return handleFotosPublicas(env)
     }
 
+    if (url.pathname === '/api/catalogo' && request.method === 'GET') {
+      return handleCatalogoPronto(env, ctx)
+    }
+
     if (url.pathname === '/api/vendedores' && request.method === 'GET') {
-      return handleVendedoresPublico(env)
     }
 
     if (url.pathname === '/api/admin/vendedores' && request.method === 'GET') {
