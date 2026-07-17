@@ -49,7 +49,7 @@ export default function Catalogo() {
               return {
                 codigo: item.codigo,
                 categoria: item.categoria,
-                promocao: item.promocao || info.emPromocao,
+                promocao: info.emPromocao,
                 nome: info.nome,
                 preco: info.preco,
                 precoOriginal: info.precoOriginal
