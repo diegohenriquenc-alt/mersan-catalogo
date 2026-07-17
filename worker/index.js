@@ -952,3 +952,54 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
     }
   })
 }
+// ---------- Catálogo pronto (performance) ----------
+
+async function preAquecerCatalogo(env) {
+  const listagem = await env.FOTOS.list({ limit: 200 })
+  const itens = listagem.keys.filter((k) => k.name !== VENDEDORES_CHAVE)
+
+  const resultados = await Promise.all(
+    itens.map(async (k) => {
+      const codigo = k.name
+      try {
+        const dados = await buscarDadosProdutoMersan(codigo)
+        if (!dados.referencia) return null
+
+        const estoque = await buscarEstoqueMersan(dados.referencia)
+        if (!estoque.length) return null
+
+        return {
+          codigo,
+          categoria: k.metadata?.categoria || '',
+          promocao: dados.emPromocao,
+          nome: dados.nome,
+          preco: dados.preco,
+          precoOriginal: dados.precoOriginal
+        }
+      } catch {
+        return null
+      }
+    })
+  )
+
+  return { produtos: resultados.filter(Boolean), atualizadoEm: new Date().toISOString() }
+}
+
+async function handleCatalogoPronto(env, ctx) {
+  const cache = caches.default
+  const chaveCache = new Request('https://mersan-catalogo.diegohenriquenc.workers.dev/__catalogo-pronto-interno')
+
+  const emCache = await cache.match(chaveCache)
+  if (emCache) {
+    return emCache
+  }
+
+  const payload = await preAquecerCatalogo(env)
+  const resposta = jsonResponse(payload, 200, {
+    'Cache-Control': `public, max-age=1800`
+  })
+
+  ctx.waitUntil(cache.put(chaveCache, resposta.clone()))
+
+  return resposta
+}
