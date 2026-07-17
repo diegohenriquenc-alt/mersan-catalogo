@@ -15,6 +15,8 @@
 const MERSAN_BASE = 'https://credito.mersan.co/api/v1'
 const LOJA = 261
 const CACHE_TTL_SECONDS = 30 * 60 // 30 minutos, conforme briefing
+const PARCELA_MINIMA = 29.99
+const MAX_PARCELAS = 10
 
 export default {
   async fetch(request, env, ctx) {
@@ -104,12 +106,16 @@ async function buscarDadosProdutoMersan(termo, signal) {
 
   const item = lista.find((p) => p.cdEmpresa === LOJA) || lista[0]
 
+  const emPromocao = item.vlPrecoPromocao > 0 && item.vlPrecoPromocao < item.vlPreco
+
   return {
     referencia: item.cdReferencia,
     nome: item.dsProduto,
     cor: item.cdCor,
     tamanho: item.dsTamanho,
-    preco: item.vlPrecoPromocao > 0 ? item.vlPrecoPromocao : item.vlPreco,
+    preco: emPromocao ? item.vlPrecoPromocao : item.vlPreco,
+    precoOriginal: item.vlPreco,
+    emPromocao,
     codigoBarras: item.cdProduto,
     codigoSku: item.cdSKU
   }
@@ -328,6 +334,8 @@ async function handleAdminUploadFoto(request, env) {
   const form = await request.formData()
   const codigo = form.get('codigo')
   const arquivo = form.get('arquivo')
+  const categoria = form.get('categoria') || ''
+  const promocao = form.get('promocao') === 'true'
 
   if (!codigo || !arquivo) {
     return jsonResponse({ error: 'Envie "codigo" e "arquivo".' }, 400)
@@ -343,7 +351,9 @@ async function handleAdminUploadFoto(request, env) {
   await env.FOTOS.put(chave, bytes, {
     metadata: {
       contentType: arquivo.type || 'image/jpeg',
-      tamanho: bytes.byteLength
+      tamanho: bytes.byteLength,
+      categoria,
+      promocao
     }
   })
 
@@ -370,24 +380,32 @@ async function handleAdminListarFotos(request, env) {
   }
 
   const listagem = await env.FOTOS.list({ limit: 200 })
-  const fotos = listagem.keys.map((k) => ({
-    codigo: k.name,
-    tamanho: k.metadata?.tamanho || null,
-    modificadoEm: k.metadata?.atualizadoEm || null
-  }))
+  const fotos = listagem.keys
+    .filter((k) => k.name !== VENDEDORES_CHAVE)
+    .map((k) => ({
+      codigo: k.name,
+      tamanho: k.metadata?.tamanho || null,
+      categoria: k.metadata?.categoria || '',
+      promocao: Boolean(k.metadata?.promocao),
+      modificadoEm: k.metadata?.atualizadoEm || null
+    }))
 
   return jsonResponse({ fotos, truncado: !listagem.list_complete })
 }
 
-// ---------- Vitrine pública ----------
+// ---------- Vitrine pública (lista de fotos, sem senha) ----------
 
 async function handleFotosPublicas(env) {
   const listagem = await env.FOTOS.list({ limit: 200 })
-  const codigos = listagem.keys
-    .map((k) => k.name)
-    .filter((nome) => nome !== VENDEDORES_CHAVE)
+  const produtos = listagem.keys
+    .filter((k) => k.name !== VENDEDORES_CHAVE)
+    .map((k) => ({
+      codigo: k.name,
+      categoria: k.metadata?.categoria || '',
+      promocao: Boolean(k.metadata?.promocao)
+    }))
 
-  return jsonResponse({ codigos, truncado: !listagem.list_complete })
+  return jsonResponse({ produtos, truncado: !listagem.list_complete })
 }
 
 // ---------- Vendedores ----------
@@ -467,10 +485,6 @@ async function handleAdminExcluirVendedor(request, url, env) {
   return jsonResponse({ ok: true })
 }
 
-// Uma página HTML mínima com um botão manual. É o último degrau de
-// segurança: se por qualquer motivo o redirecionamento automático não
-// puder ser feito, a pessoa ainda assim vê algo clicável, nunca uma tela
-// genuinamente em branco.
 function paginaLinkManual(linkWhatsApp, mensagemTopo) {
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -494,14 +508,10 @@ function paginaLinkManual(linkWhatsApp, mensagemTopo) {
   })
 }
 
-// Monta a mensagem final e redireciona para o WhatsApp do vendedor
-// escolhido — o número de telefone nunca passa pelo navegador da pessoa,
-// só o link final do wa.me.
 async function handleIrVendedor(request, url, env) {
   const vendedorId = url.searchParams.get('vendedor')
   const codigo = url.searchParams.get('codigo')
   const tamanho = url.searchParams.get('tamanho')
-  const parcelas = Number(url.searchParams.get('parcelas')) || 1
 
   if (!vendedorId || !codigo) {
     return new Response('Link inválido.', { status: 400 })
@@ -525,6 +535,8 @@ async function handleIrVendedor(request, url, env) {
   const linkProduto = `${url.origin}/produto/${encodeURIComponent(codigo)}`
 
   let nomeProduto = codigo
+  let referencia = null
+  let cor = null
   let preco = null
   try {
     const controlador = new AbortController()
@@ -532,25 +544,36 @@ async function handleIrVendedor(request, url, env) {
     const dados = await buscarDadosProdutoMersan(codigo, controlador.signal)
     clearTimeout(tempoLimite)
     nomeProduto = dados.nome
+    referencia = dados.referencia
+    cor = dados.cor
     preco = dados.preco
   } catch {
-    // Sem dados do produto (demorou, ou deu erro): segue com o código mesmo.
+    // Sem dados do produto (demorou, ou deu erro): segue só com o código.
   }
 
-  const linhas = ['Olá! Tenho interesse neste produto da Mersan Calçados:', nomeProduto]
+  const linhas = [
+    'Olá!',
+    'Tenho interesse neste produto da Mersan Calçados.',
+    `Produto: ${nomeProduto}`
+  ]
 
+  if (referencia) linhas.push(`Referência: ${referencia}`)
+  if (cor) linhas.push(`Cor: ${cor}`)
   if (tamanho) linhas.push(`Tamanho: ${tamanho}`)
 
   if (preco != null) {
-    if (parcelas > 1) {
-      const valorParcela = (preco / parcelas).toFixed(2).replace('.', ',')
-      linhas.push(`Parcelamento: ${parcelas}x de R$ ${valorParcela} (parcela mínima R$ 29,99)`)
-    } else {
-      linhas.push(`Valor: R$ ${preco.toFixed(2).replace('.', ',')}`)
+    linhas.push(`Valor: R$ ${preco.toFixed(2).replace('.', ',')}`)
+
+    const maxParcelas = Math.min(MAX_PARCELAS, Math.max(1, Math.floor(preco / PARCELA_MINIMA)))
+    if (maxParcelas > 1) {
+      const valorParcela = (preco / maxParcelas).toFixed(2).replace('.', ',')
+      linhas.push(`Parcelamento: ${maxParcelas}x de R$ ${valorParcela}`)
     }
   }
 
-  linhas.push(linkProduto)
+  linhas.push(`Link: ${linkProduto}`)
+  linhas.push('')
+  linhas.push('Gostaria de mais informações.')
 
   const mensagem = linhas.join('\n')
   const linkWhatsApp = `https://wa.me/${vendedor.whatsapp}?text=${encodeURIComponent(mensagem)}`
@@ -573,4 +596,4 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
       ...extraHeaders
     }
   })
-      }
+                             }
