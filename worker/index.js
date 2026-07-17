@@ -1004,3 +1004,12 @@ async function handleCatalogoPronto(env, ctx) {
 
   return resposta
 }
+async function preAquecerCatalogoAgendado(env) {
+  const payload = await preAquecerCatalogo(env)
+  const resposta = jsonResponse(payload, 200, {
+    'Cache-Control': `public, max-age=1800`
+  })
+  const cache = caches.default
+  const chaveCache = new Request('https://mersan-catalogo.diegohenriquenc.workers.dev/__catalogo-pronto-interno')
+  await cache.put(chaveCache, resposta)
+}
