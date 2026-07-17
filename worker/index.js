@@ -296,6 +296,14 @@ function normalizarCodigo(codigo) {
   return codigo.trim().replace(/\s+/g, '_')
 }
 
+// A referência que vem da Mersan às vezes traz o número do calçado colado
+// no final (ex: "001 145 8106-41"). Para o cliente, mostramos só a parte
+// fixa da referência, sem esse sufixo de tamanho.
+function referenciaParaCliente(referencia) {
+  if (!referencia) return referencia
+  return referencia.replace(/[-\s]\d{2,3}$/, '').trim()
+}
+
 async function handleServirFoto(url, env) {
   const codigo = decodeURIComponent(url.pathname.replace('/produto-foto/', ''))
   const chave = normalizarCodigo(codigo)
@@ -538,6 +546,8 @@ async function handleIrVendedor(request, url, env) {
   let referencia = null
   let cor = null
   let preco = null
+  let precoOriginal = null
+  let emPromocao = false
   try {
     const controlador = new AbortController()
     const tempoLimite = setTimeout(() => controlador.abort(), 4000)
@@ -547,6 +557,8 @@ async function handleIrVendedor(request, url, env) {
     referencia = dados.referencia
     cor = dados.cor
     preco = dados.preco
+    precoOriginal = dados.precoOriginal
+    emPromocao = dados.emPromocao
   } catch {
     // Sem dados do produto (demorou, ou deu erro): segue só com o código.
   }
@@ -557,12 +569,17 @@ async function handleIrVendedor(request, url, env) {
     `Produto: ${nomeProduto}`
   ]
 
-  if (referencia) linhas.push(`Referência: ${referencia}`)
+  if (referencia) linhas.push(`Referência: ${referenciaParaCliente(referencia)}`)
   if (cor) linhas.push(`Cor: ${cor}`)
   if (tamanho) linhas.push(`Tamanho: ${tamanho}`)
 
   if (preco != null) {
-    linhas.push(`Valor: R$ ${preco.toFixed(2).replace('.', ',')}`)
+    if (emPromocao && precoOriginal > preco) {
+      linhas.push(`De: R$ ${precoOriginal.toFixed(2).replace('.', ',')}`)
+      linhas.push(`Por: R$ ${preco.toFixed(2).replace('.', ',')}`)
+    } else {
+      linhas.push(`Valor: R$ ${preco.toFixed(2).replace('.', ',')}`)
+    }
 
     const maxParcelas = Math.min(MAX_PARCELAS, Math.max(1, Math.floor(preco / PARCELA_MINIMA)))
     if (maxParcelas > 1) {
@@ -596,4 +613,4 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
       ...extraHeaders
     }
   })
-                             }
+    }
