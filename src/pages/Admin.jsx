@@ -288,8 +288,6 @@ function PainelFotos({ senha }) {
           body: form
         })
       } else {
-        // Editando sem trocar a foto: só atualiza categoria/promoção,
-        // mantendo a imagem que já estava salva.
         resp = await fetch('/api/admin/foto', {
           method: 'PATCH',
           headers: {
@@ -303,7 +301,7 @@ function PainelFotos({ senha }) {
       const data = await resp.json()
       if (!resp.ok) {
         setStatus({ tipo: 'erro', texto: data.error || 'Falha ao enviar.' })
-      } else {
+        } else {
         setStatus({ tipo: 'sucesso', texto: `Foto salva para "${data.codigo}".` })
         setCodigo('')
         setArquivo(null)
@@ -505,27 +503,26 @@ function PainelFotos({ senha }) {
                       e.currentTarget.src = IMAGEM_PADRAO
                     }}
                   />
-                  <span style={styles.codigoLista}>
-                    {f.codigo}
-                    {f.categoria && <span style={styles.tamanhoTexto}> • {f.categoria}</span>}
-                    {f.promocao && <span style={styles.tamanhoTexto}> • 🔴 promoção</span>}
-                    {f.tamanho != null && (
-                      <span style={styles.tamanhoTexto}>
-                        {' '}
-                        • {Math.round(f.tamanho / 1024)}KB
-                        {f.tamanho > 400 * 1024 ? ' ⚠️ pesada' : ''}
-                      </span>
-                    )}
-                  </span>
-                  <button onClick={() => handleEditar(f)} style={styles.botaoEditar}>
-                    Editar
-                  </button>
-                  <button onClick={() => handleIniciarRenomear(f)} style={styles.botaoReferencia}>
-                    Alterar referência
-                  </button>
-                  <button onClick={() => handleExcluir(f.codigo)} style={styles.botaoExcluir}>
-                    Excluir
-                  </button>
+                  <div style={styles.infoCompacta}>
+                    <span style={styles.codigoCompacto}>{f.codigo}</span>
+                    <span style={styles.metaCompacta}>
+                      {f.categoria || 'Sem categoria'}
+                      {f.promocao && ' • 🔴 promo'}
+                      {f.tamanho != null && ` • ${Math.round(f.tamanho / 1024)}KB`}
+                      {f.tamanho > 400 * 1024 ? ' ⚠️' : ''}
+                    </span>
+                  </div>
+                  <div style={styles.botoesCompactos}>
+                    <button onClick={() => handleEditar(f)} style={styles.botaoEditarCompacto}>
+                      Editar
+                    </button>
+                    <button onClick={() => handleIniciarRenomear(f)} style={styles.botaoReferenciaCompacto}>
+                      Ref.
+                    </button>
+                    <button onClick={() => handleExcluir(f.codigo)} style={styles.botaoExcluirCompacto}>
+                      Excluir
+                    </button>
+                  </div>
                 </li>
 
                 {renomeando === f.codigo && (
@@ -597,6 +594,7 @@ function PainelFotos({ senha }) {
               {salvandoVendedor ? 'Salvando…' : 'Adicionar vendedor'}
             </button>
           </form>
+
           {vendedores.length === 0 && (
             <p style={styles.vazio}>Nenhum vendedor cadastrado ainda.</p>
           )}
@@ -627,7 +625,6 @@ function PainelFotos({ senha }) {
     </main>
   )
 }
-
 const styles = {
   main: {
     minHeight: '100dvh',
@@ -773,15 +770,77 @@ const styles = {
   itemLista: {
     display: 'flex',
     alignItems: 'center',
-    gap: '10px'
+    gap: '8px',
+    minHeight: '44px'
   },
   miniatura: {
-    width: '44px',
-    height: '44px',
+    width: '34px',
+    height: '34px',
+    flexShrink: 0,
     objectFit: 'contain',
-    borderRadius: '8px',
+    borderRadius: '6px',
     border: '1px solid #e6e6e6',
     background: '#fafafa'
+  },
+  infoCompacta: {
+    display: 'flex',
+    flexDirection: 'column',
+    flex: 1,
+    minWidth: 0,
+    gap: '1px'
+  },
+  codigoCompacto: {
+    fontSize: '12px',
+    fontWeight: 700,
+    color: '#111111',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
+  },
+  metaCompacta: {
+    fontSize: '10px',
+    color: '#8a8a8a',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
+  },
+  botoesCompactos: {
+    display: 'flex',
+    flexShrink: 0,
+    gap: '4px'
+  },
+  botaoEditarCompacto: {
+    padding: '5px 8px',
+    fontSize: '10px',
+    fontWeight: 700,
+    color: '#0057ff',
+    background: '#f2f6ff',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap'
+  },
+  botaoReferenciaCompacto: {
+    padding: '5px 8px',
+    fontSize: '10px',
+    fontWeight: 700,
+    color: '#7a4de8',
+    background: '#f5f0ff',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap'
+  },
+  botaoExcluirCompacto: {
+    padding: '5px 8px',
+    fontSize: '10px',
+    fontWeight: 700,
+    color: '#d92d20',
+    background: '#fff0ef',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap'
   },
   codigoLista: {
     flex: 1,
