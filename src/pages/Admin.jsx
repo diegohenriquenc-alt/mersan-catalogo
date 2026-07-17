@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 
@@ -69,6 +69,10 @@ function PainelFotos({ senha }) {
   const [categoria, setCategoria] = useState('')
   const [promocao, setPromocao] = useState(false)
   const [editando, setEditando] = useState(null)
+  const [renomeando, setRenomeando] = useState(null)
+  const [novaReferencia, setNovaReferencia] = useState('')
+  const [salvandoReferencia, setSalvandoReferencia] = useState(false)
+  const [erroReferencia, setErroReferencia] = useState(null)
   const [preview, setPreview] = useState(null)
   const [status, setStatus] = useState(null)
   const [enviando, setEnviando] = useState(false)
@@ -162,7 +166,7 @@ function PainelFotos({ senha }) {
     setPreview(file ? URL.createObjectURL(file) : null)
   }
 
-  async function abrirLeitor() {
+  async function abrirLeitor(alvo = 'principal') {
     setScanErro(null)
 
     if (!('BarcodeDetector' in window)) {
@@ -181,7 +185,7 @@ function PainelFotos({ senha }) {
         if (videoRef.current) {
           videoRef.current.srcObject = stream
           videoRef.current.play()
-          iniciarLeitura()
+          iniciarLeitura(alvo)
         }
       }, 0)
     } catch {
@@ -201,7 +205,7 @@ function PainelFotos({ senha }) {
     setScanAtivo(false)
   }
 
-  function iniciarLeitura() {
+  function iniciarLeitura(alvo) {
     const detector = new window.BarcodeDetector()
 
     async function verificar() {
@@ -209,7 +213,11 @@ function PainelFotos({ senha }) {
       try {
         const codigos = await detector.detect(videoRef.current)
         if (codigos.length > 0) {
-          setCodigo(codigos[0].rawValue)
+          if (alvo === 'referencia') {
+            setNovaReferencia(codigos[0].rawValue)
+          } else {
+            setCodigo(codigos[0].rawValue)
+          }
           fecharLeitor()
           return
         }
@@ -252,6 +260,7 @@ function PainelFotos({ senha }) {
 
     return new File([ultimoBlob], 'foto.jpg', { type: 'image/jpeg' })
   }
+
   async function handleEnviar(e) {
     e.preventDefault()
     if (!codigo) return
@@ -279,6 +288,8 @@ function PainelFotos({ senha }) {
           body: form
         })
       } else {
+        // Editando sem trocar a foto: só atualiza categoria/promoção,
+        // mantendo a imagem que já estava salva.
         resp = await fetch('/api/admin/foto', {
           method: 'PATCH',
           headers: {
@@ -328,6 +339,47 @@ function PainelFotos({ senha }) {
     setArquivo(null)
     setPreview(null)
     setStatus(null)
+  }
+
+  function handleIniciarRenomear(foto) {
+    setRenomeando(foto.codigo)
+    setNovaReferencia(foto.codigo)
+    setErroReferencia(null)
+  }
+
+  function handleCancelarRenomear() {
+    setRenomeando(null)
+    setNovaReferencia('')
+    setErroReferencia(null)
+  }
+
+  async function handleSalvarReferencia() {
+    if (!renomeando || !novaReferencia) return
+
+    setSalvandoReferencia(true)
+    setErroReferencia(null)
+    try {
+      const resp = await fetch('/api/admin/foto/renomear', {
+        method: 'POST',
+        headers: {
+          'X-Admin-Password': senha,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ codigoAntigo: renomeando, codigoNovo: novaReferencia })
+      })
+      const data = await resp.json()
+      if (!resp.ok) {
+        setErroReferencia(data.error || 'Não foi possível alterar a referência.')
+      } else {
+        setRenomeando(null)
+        setNovaReferencia('')
+        carregarLista()
+      }
+    } catch {
+      setErroReferencia('Não foi possível conectar. Tente novamente.')
+    } finally {
+      setSalvandoReferencia(false)
+    }
   }
 
   async function handleExcluir(codigoFoto) {
@@ -443,34 +495,78 @@ function PainelFotos({ senha }) {
           )}
           <ul style={styles.lista}>
             {fotos.map((f) => (
-              <li key={f.codigo} style={styles.itemLista}>
-                <img
-                  src={`/produto-foto/${encodeURIComponent(f.codigo)}`}
-                  alt={f.codigo}
-                  style={styles.miniatura}
-                  onError={(e) => {
-                    e.currentTarget.src = IMAGEM_PADRAO
-                  }}
-                />
-                <span style={styles.codigoLista}>
-                  {f.codigo}
-                  {f.categoria && <span style={styles.tamanhoTexto}> • {f.categoria}</span>}
-                  {f.promocao && <span style={styles.tamanhoTexto}> • 🔴 promoção</span>}
-                  {f.tamanho != null && (
-                    <span style={styles.tamanhoTexto}>
-                      {' '}
-                      • {Math.round(f.tamanho / 1024)}KB
-                      {f.tamanho > 400 * 1024 ? ' ⚠️ pesada' : ''}
-                    </span>
-                  )}
-                </span>
-                <button onClick={() => handleEditar(f)} style={styles.botaoEditar}>
-                  Editar
-                </button>
-                <button onClick={() => handleExcluir(f.codigo)} style={styles.botaoExcluir}>
-                  Excluir
-                </button>
-              </li>
+              <Fragment key={f.codigo}>
+                <li style={styles.itemLista}>
+                  <img
+                    src={`/produto-foto/${encodeURIComponent(f.codigo)}`}
+                    alt={f.codigo}
+                    style={styles.miniatura}
+                    onError={(e) => {
+                      e.currentTarget.src = IMAGEM_PADRAO
+                    }}
+                  />
+                  <span style={styles.codigoLista}>
+                    {f.codigo}
+                    {f.categoria && <span style={styles.tamanhoTexto}> • {f.categoria}</span>}
+                    {f.promocao && <span style={styles.tamanhoTexto}> • 🔴 promoção</span>}
+                    {f.tamanho != null && (
+                      <span style={styles.tamanhoTexto}>
+                        {' '}
+                        • {Math.round(f.tamanho / 1024)}KB
+                        {f.tamanho > 400 * 1024 ? ' ⚠️ pesada' : ''}
+                      </span>
+                    )}
+                  </span>
+                  <button onClick={() => handleEditar(f)} style={styles.botaoEditar}>
+                    Editar
+                  </button>
+                  <button onClick={() => handleIniciarRenomear(f)} style={styles.botaoReferencia}>
+                    Alterar referência
+                  </button>
+                  <button onClick={() => handleExcluir(f.codigo)} style={styles.botaoExcluir}>
+                    Excluir
+                  </button>
+                </li>
+
+                {renomeando === f.codigo && (
+                  <li key={`renomear-${f.codigo}`} style={styles.renomearBox}>
+                    <label style={styles.label}>
+                      Nova referência / código de barras
+                      <div style={styles.linhaCodigo}>
+                        <input
+                          type="text"
+                          value={novaReferencia}
+                          onChange={(e) => setNovaReferencia(e.target.value)}
+                          style={{ ...styles.input, flex: 1 }}
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          onClick={() => abrirLeitor('referencia')}
+                          style={styles.botaoBipar}
+                        >
+                          📷 Bipar
+                        </button>
+                      </div>
+                    </label>
+
+                    {erroReferencia && <p style={styles.erro}>{erroReferencia}</p>}
+
+                    <div style={styles.linhaCodigo}>
+                      <button
+                        onClick={handleSalvarReferencia}
+                        style={styles.botao}
+                        disabled={salvandoReferencia || !novaReferencia}
+                      >
+                        {salvandoReferencia ? 'Salvando…' : 'Salvar referência'}
+                      </button>
+                      <button onClick={handleCancelarRenomear} style={styles.botaoSecundario}>
+                        Cancelar
+                      </button>
+                    </div>
+                  </li>
+                )}
+              </Fragment>
             ))}
           </ul>
         </div>
@@ -501,7 +597,6 @@ function PainelFotos({ senha }) {
               {salvandoVendedor ? 'Salvando…' : 'Adicionar vendedor'}
             </button>
           </form>
-
           {vendedores.length === 0 && (
             <p style={styles.vazio}>Nenhum vendedor cadastrado ainda.</p>
           )}
@@ -515,7 +610,7 @@ function PainelFotos({ senha }) {
                   Excluir
                 </button>
               </li>
-      ))}
+            ))}
           </ul>
         </div>
       </div>
@@ -707,6 +802,25 @@ const styles = {
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer'
+  },
+  botaoReferencia: {
+    padding: '6px 12px',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#7a4de8',
+    background: '#f5f0ff',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer'
+  },
+  renomearBox: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    padding: '14px',
+    background: '#fafafa',
+    border: '1px solid #e6e6e6',
+    borderRadius: '10px'
   },
   editandoAviso: {
     fontSize: '13px',
