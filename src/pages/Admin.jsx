@@ -66,6 +66,8 @@ export default function Admin() {
 function PainelFotos({ senha }) {
   const [codigo, setCodigo] = useState('')
   const [arquivo, setArquivo] = useState(null)
+  const [categoria, setCategoria] = useState('')
+  const [promocao, setPromocao] = useState(false)
   const [preview, setPreview] = useState(null)
   const [status, setStatus] = useState(null)
   const [enviando, setEnviando] = useState(false)
@@ -259,6 +261,8 @@ function PainelFotos({ senha }) {
 
     const form = new FormData()
     form.append('codigo', codigo)
+    form.append('categoria', categoria)
+    form.append('promocao', promocao ? 'true' : 'false')
     try {
       const arquivoComprimido = await comprimirImagem(arquivo)
       form.append('arquivo', arquivoComprimido)
@@ -279,6 +283,8 @@ function PainelFotos({ senha }) {
         setStatus({ tipo: 'sucesso', texto: `Foto salva para "${data.codigo}".` })
         setCodigo('')
         setArquivo(null)
+        setCategoria('')
+        setPromocao(false)
         setPreview(null)
         carregarLista()
       }
@@ -340,6 +346,31 @@ function PainelFotos({ senha }) {
             <input type="file" accept="image/*" onChange={handleArquivo} style={styles.inputArquivo} />
           </label>
 
+          <label style={styles.label}>
+            Categoria
+            <select
+              value={categoria}
+              onChange={(e) => setCategoria(e.target.value)}
+              style={styles.input}
+            >
+              <option value="">Sem categoria</option>
+              <option value="Feminino">Feminino</option>
+              <option value="Masculino">Masculino</option>
+              <option value="Infantil">Infantil</option>
+              <option value="Esportivo">Esportivo</option>
+              <option value="Arezzo">Arezzo</option>
+            </select>
+          </label>
+
+          <label style={styles.checkboxLabel}>
+            <input
+              type="checkbox"
+              checked={promocao}
+              onChange={(e) => setPromocao(e.target.checked)}
+            />
+            Mostrar selo de promoção neste produto
+          </label>
+
           {preview && <img src={preview} alt="Pré-visualização" style={styles.preview} />}
 
           {status && (
@@ -371,6 +402,8 @@ function PainelFotos({ senha }) {
                 />
                 <span style={styles.codigoLista}>
                   {f.codigo}
+                  {f.categoria && <span style={styles.tamanhoTexto}> • {f.categoria}</span>}
+                  {f.promocao && <span style={styles.tamanhoTexto}> • 🔴 promoção</span>}
                   {f.tamanho != null && (
                     <span style={styles.tamanhoTexto}>
                       {' '}
@@ -488,6 +521,14 @@ const styles = {
     gap: '6px',
     fontSize: '13px',
     color: '#6b6b6b',
+    fontWeight: 600
+  },
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '13px',
+    color: '#111111',
     fontWeight: 600
   },
   input: {
@@ -647,4 +688,4 @@ const styles = {
     borderRadius: '999px',
     cursor: 'pointer'
   }
-    }
+                              }
