@@ -1,19 +1,4 @@
 // Worker único do Catálogo Mersan.
-//
-// Rotas:
-//  /produto/{codigo}             -> página do produto com meta tags Open
-//                                    Graph dinâmicas
-//  /api/produto?termo=...        -> dados do produto na API da Mersan
-//  /api/estoque?referencia=...   -> estoque na loja 261
-//  /produto-foto/{codigo}        -> serve a foto do produto (armazenada no KV)
-//  /api/admin/login              -> valida a senha do painel administrativo
-//  /api/admin/foto (POST)        -> envia/troca a foto de um produto
-//  /api/admin/foto (PATCH)       -> edita categoria/promoção sem trocar a foto
-//  /api/admin/foto/renomear (POST) -> muda a referência sem trocar a foto
-//  /api/admin/foto (DELETE)      -> exclui a foto de um produto
-//  /api/admin/fotos (GET)        -> lista as fotos já cadastradas
-//  qualquer outra rota           -> site estático (React) via binding ASSETS
-
 const MERSAN_BASE = 'https://credito.mersan.co/api/v1'
 const LOJA = 261
 const CACHE_TTL_SECONDS = 30 * 60
@@ -337,12 +322,11 @@ async function handleAdminLogin(request, env) {
 async function handleAdminUploadFoto(request, env) {
   if (!autenticado(request, env)) {
     return jsonResponse({ error: 'Senha incorreta.' }, 401)
-}
+      }
   const form = await request.formData()
   const codigo = form.get('codigo')
   const arquivo = form.get('arquivo')
   const categoria = form.get('categoria') || ''
-  const promocao = form.get('promocao') === 'true'
 
   if (!codigo || !arquivo) {
     return jsonResponse({ error: 'Envie "codigo" e "arquivo".' }, 400)
@@ -359,8 +343,7 @@ async function handleAdminUploadFoto(request, env) {
     metadata: {
       contentType: arquivo.type || 'image/jpeg',
       tamanho: bytes.byteLength,
-      categoria,
-      promocao
+      categoria
     }
   })
 
@@ -375,7 +358,6 @@ async function handleAdminAtualizarFoto(request, env) {
   const corpo = await request.json().catch(() => null)
   const codigo = corpo?.codigo
   const categoria = corpo?.categoria || ''
-  const promocao = Boolean(corpo?.promocao)
 
   if (!codigo) {
     return jsonResponse({ error: 'Parâmetro "codigo" é obrigatório.' }, 400)
@@ -392,8 +374,7 @@ async function handleAdminAtualizarFoto(request, env) {
     metadata: {
       contentType: resultado.metadata?.contentType || 'image/jpeg',
       tamanho: resultado.metadata?.tamanho || resultado.value.byteLength,
-      categoria,
-      promocao
+      categoria
     }
   })
 
@@ -467,7 +448,6 @@ async function handleAdminListarFotos(request, env) {
       codigo: k.name,
       tamanho: k.metadata?.tamanho || null,
       categoria: k.metadata?.categoria || '',
-      promocao: Boolean(k.metadata?.promocao),
       modificadoEm: k.metadata?.atualizadoEm || null
     }))
 
@@ -480,8 +460,7 @@ async function handleFotosPublicas(env) {
     .filter((k) => k.name !== VENDEDORES_CHAVE)
     .map((k) => ({
       codigo: k.name,
-      categoria: k.metadata?.categoria || '',
-      promocao: Boolean(k.metadata?.promocao)
+      categoria: k.metadata?.categoria || ''
     }))
 
   return jsonResponse({ produtos, truncado: !listagem.list_complete })
@@ -680,4 +659,4 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
       ...extraHeaders
     }
   })
-                        }
+  }
