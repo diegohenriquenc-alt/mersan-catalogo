@@ -502,7 +502,7 @@ async function handleAdminExcluirFoto(request, url, env) {
 
   const listagem = await env.FOTOS.list({ limit: 200 })
   const fotos = listagem.keys
-    .filter((k) => k.name !== VENDEDORES_CHAVE)
+    .filter((k) => k.name !== VENDEDORES_CHAVE && k.name !== CATALOGO_CACHE_CHAVE && k.name !== CATALOGO_CURSOR_CHAVE)
     .map((k) => ({
       codigo: k.name,
       tamanho: k.metadata?.tamanho || null,
