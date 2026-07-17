@@ -431,3 +431,193 @@ async function handleAdminUploadFoto(request, env) {
 
   return jsonResponse({ ok: true, codigo: chave })
       }
+async function handleAdminAtualizarFoto(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const corpo = await request.json().catch(() => null)
+  const codigo = corpo?.codigo
+  const categoria = corpo?.categoria || ''
+
+  if (!codigo) {
+    return jsonResponse({ error: 'Parâmetro "codigo" é obrigatório.' }, 400)
+  }
+
+  const chave = normalizarCodigo(codigo)
+  const resultado = await env.FOTOS.getWithMetadata(chave, 'arrayBuffer')
+
+  if (!resultado || !resultado.value) {
+    return jsonResponse({ error: 'Foto não encontrada para esse código.' }, 404)
+  }
+
+  await env.FOTOS.put(chave, resultado.value, {
+    metadata: {
+      contentType: resultado.metadata?.contentType || 'image/jpeg',
+      tamanho: resultado.metadata?.tamanho || resultado.value.byteLength,
+      categoria
+    }
+  })
+
+  return jsonResponse({ ok: true, codigo: chave })
+}
+
+async function handleAdminRenomearFoto(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const corpo = await request.json().catch(() => null)
+  const codigoAntigo = corpo?.codigoAntigo
+  const codigoNovo = corpo?.codigoNovo
+
+  if (!codigoAntigo || !codigoNovo) {
+    return jsonResponse({ error: 'Envie "codigoAntigo" e "codigoNovo".' }, 400)
+  }
+
+  const chaveAntiga = normalizarCodigo(codigoAntigo)
+  const chaveNova = normalizarCodigo(codigoNovo)
+
+  if (chaveAntiga === chaveNova) {
+    return jsonResponse({ ok: true, codigo: chaveNova })
+  }
+
+  const resultado = await env.FOTOS.getWithMetadata(chaveAntiga, 'arrayBuffer')
+  if (!resultado || !resultado.value) {
+    return jsonResponse({ error: 'Foto não encontrada para o código atual.' }, 404)
+  }
+
+  const jaExiste = await env.FOTOS.get(chaveNova)
+  if (jaExiste) {
+    return jsonResponse(
+      { error: 'Já existe uma foto cadastrada com essa referência. Exclua a antiga primeiro se quiser substituir.' },
+      409
+    )
+  }
+
+  await env.FOTOS.put(chaveNova, resultado.value, {
+    metadata: resultado.metadata || {}
+  })
+  await env.FOTOS.delete(chaveAntiga)
+
+  return jsonResponse({ ok: true, codigo: chaveNova })
+}
+
+async function handleAdminExcluirFoto(request, url, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const codigo = url.searchParams.get('codigo')
+  if (!codigo) {
+    return jsonResponse({ error: 'Parâmetro "codigo" é obrigatório.' }, 400)
+  }
+
+  await env.FOTOS.delete(normalizarCodigo(codigo))
+  return jsonResponse({ ok: true })
+}
+
+async function handleAdminListarFotos(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const listagem = await env.FOTOS.list({ limit: 200 })
+  const fotos = listagem.keys
+    .filter((k) => k.name !== VENDEDORES_CHAVE && k.name !== CATALOGO_CACHE_CHAVE && k.name !== CATALOGO_CURSOR_CHAVE)
+    .map((k) => ({
+      codigo: k.name,
+      tamanho: k.metadata?.tamanho || null,
+      categoria: k.metadata?.categoria || '',
+      modificadoEm: k.metadata?.atualizadoEm || null
+    }))
+
+  return jsonResponse({ fotos, truncado: !listagem.list_complete })
+}
+
+async function handleFotosPublicas(env) {
+  const listagem = await env.FOTOS.list({ limit: 200 })
+  const produtos = listagem.keys
+    .filter((k) => k.name !== VENDEDORES_CHAVE && k.name !== CATALOGO_CACHE_CHAVE)
+    .map((k) => ({
+      codigo: k.name,
+      categoria: k.metadata?.categoria || ''
+    }))
+
+  return jsonResponse({ produtos, truncado: !listagem.list_complete })
+}
+
+const VENDEDORES_CHAVE = '_vendedores'
+
+async function getVendedores(env) {
+  const bruto = await env.FOTOS.get(VENDEDORES_CHAVE)
+  if (!bruto) return []
+  try {
+    const lista = JSON.parse(bruto)
+    return Array.isArray(lista) ? lista : []
+  } catch {
+    return []
+  }
+}
+
+async function salvarVendedores(env, lista) {
+  await env.FOTOS.put(VENDEDORES_CHAVE, JSON.stringify(lista))
+}
+
+async function handleVendedoresPublico(env) {
+  const lista = await getVendedores(env)
+  const publico = lista.map((v) => ({ id: v.id, nome: v.nome }))
+  return jsonResponse({ vendedores: publico })
+}
+
+async function handleAdminListarVendedores(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+  const lista = await getVendedores(env)
+  return jsonResponse({ vendedores: lista })
+}
+
+async function handleAdminSalvarVendedor(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const corpo = await request.json().catch(() => null)
+  const nome = corpo?.nome?.trim()
+  const whatsapp = corpo?.whatsapp?.replace(/\D/g, '')
+
+  if (!nome || !whatsapp) {
+    return jsonResponse({ error: 'Envie "nome" e "whatsapp".' }, 400)
+  }
+
+  const lista = await getVendedores(env)
+  const id = corpo?.id || crypto.randomUUID()
+  const existente = lista.findIndex((v) => v.id === id)
+  const registro = { id, nome, whatsapp }
+
+  if (existente >= 0) {
+    lista[existente] = registro
+  } else {
+    lista.push(registro)
+  }
+
+  await salvarVendedores(env, lista)
+  return jsonResponse({ ok: true, vendedor: registro })
+}
+
+async function handleAdminExcluirVendedor(request, url, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const id = url.searchParams.get('id')
+  if (!id) {
+    return jsonResponse({ error: 'Parâmetro "id" é obrigatório.' }, 400)
+  }
+
+  const lista = await getVendedores(env)
+  const nova = lista.filter((v) => v.id !== id)
+  await salvarVendedores(env, nova)
+  return jsonResponse({ ok: true })
+}
