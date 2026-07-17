@@ -21,9 +21,6 @@ function formatarPreco(preco) {
   return preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-// Tela inicial do catálogo: cabeçalho fixo, menu lateral com categorias e
-// a grade de produtos aparecendo direto, sem tela de busca no meio do
-// caminho — o cliente já vê os produtos assim que abre o link.
 export default function Catalogo() {
   const [produtos, setProdutos] = useState([])
   const [loading, setLoading] = useState(true)
@@ -47,7 +44,8 @@ export default function Catalogo() {
         const resultados = await Promise.all(
           lista.map(async (item) => {
             try {
-              const info = await ApiService.buscarDadosProduto(item.codigo)
+              const info = await ApiService.buscarProduto(item.codigo)
+              if (!info.estoque || info.estoque.length === 0) return null
               return {
                 codigo: item.codigo,
                 categoria: item.categoria,
@@ -407,4 +405,4 @@ const styles = {
     borderRadius: '10px',
     cursor: 'pointer'
   }
-  }
+          }
