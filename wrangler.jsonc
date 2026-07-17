@@ -13,6 +13,8 @@
       "binding": "FOTOS",
       "id": "9fbce68725ad4ddca090caa0c8dcb473"
     }
-  ]
+  ],
+  "triggers": {
+    "crons": ["*/25 * * * *"]
+  }
 }
-
