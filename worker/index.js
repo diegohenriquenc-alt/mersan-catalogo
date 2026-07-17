@@ -723,3 +723,91 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
   await env.FOTOS.delete(normalizarCodigo(codigo))
   return jsonResponse({ ok: true })
                          }
+async function handleAdminListarFotos(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const listagem = await env.FOTOS.list({ limit: 200 })
+  const fotos = listagem.keys
+    .filter((k) => k.name !== VENDEDORES_CHAVE)
+    .map((k) => ({
+      codigo: k.name,
+      tamanho: k.metadata?.tamanho || null,
+      categoria: k.metadata?.categoria || '',
+      modificadoEm: k.metadata?.atualizadoEm || null
+    }))
+
+  return jsonResponse({ fotos, truncado: !listagem.list_complete })
+}
+
+async function handleFotosPublicas(env) {
+  const listagem = await env.FOTOS.list({ limit: 200 })
+  const produtos = listagem.keys
+    .filter((k) => k.name !== VENDEDORES_CHAVE)
+    .map((k) => ({
+      codigo: k.name,
+      categoria: k.metadata?.categoria || ''
+    }))
+
+  return jsonResponse({ produtos, truncado: !listagem.list_complete })
+}
+
+const VENDEDORES_CHAVE = '_vendedores'
+
+async function getVendedores(env) {
+  const bruto = await env.FOTOS.get(VENDEDORES_CHAVE)
+  if (!bruto) return []
+  try {
+    const lista = JSON.parse(bruto)
+    return Array.isArray(lista) ? lista : []
+  } catch {
+    return []
+  }
+}
+
+async function salvarVendedores(env, lista) {
+  await env.FOTOS.put(VENDEDORES_CHAVE, JSON.stringify(lista))
+}
+
+async function handleVendedoresPublico(env) {
+  const lista = await getVendedores(env)
+  const publico = lista.map((v) => ({ id: v.id, nome: v.nome }))
+  return jsonResponse({ vendedores: publico })
+}
+
+async function handleAdminListarVendedores(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+  const lista = await getVendedores(env)
+  return jsonResponse({ vendedores: lista })
+}
+
+async function handleAdminSalvarVendedor(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const corpo = await request.json().catch(() => null)
+  const nome = corpo?.nome?.trim()
+  const whatsapp = corpo?.whatsapp?.replace(/\D/g, '')
+
+  if (!nome || !whatsapp) {
+    return jsonResponse({ error: 'Envie "nome" e "whatsapp".' }, 400)
+  }
+
+  const lista = await getVendedores(env)
+  const id = corpo?.id || crypto.randomUUID()
+  const existente = lista.findIndex((v) => v.id === id)
+  const registro = { id, nome, whatsapp }
+
+  if (existente >= 0) {
+    lista[existente] = registro
+  } else {
+    lista.push(registro)
+  }
+
+  await salvarVendedores(env, lista)
+  return jsonResponse({ ok: true, vendedor: registro })
+}
