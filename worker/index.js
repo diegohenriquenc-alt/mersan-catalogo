@@ -81,6 +81,7 @@ export default {
 
   async scheduled(event, env, ctx) {
     ctx.waitUntil(preAquecerCache(env))
+    ctx.waitUntil(preAquecerCatalogoAgendado(env))
   }
 }
 
