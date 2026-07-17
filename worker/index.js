@@ -876,3 +876,76 @@ async function handleIrVendedor(request, url, env) {
   }
 
   const linkProduto = `${url.origin}/produto/${encodeURIComponent(codigo)}?v=${Date.now()}`
+  let nomeProduto = codigo
+  let referencia = null
+  let cor = null
+  let preco = null
+  let precoOriginal = null
+  let emPromocao = false
+  try {
+    const controlador = new AbortController()
+    const tempoLimite = setTimeout(() => controlador.abort(), 4000)
+    const dados = await buscarDadosProdutoMersan(codigo, controlador.signal)
+    clearTimeout(tempoLimite)
+    nomeProduto = dados.nome
+    referencia = dados.referencia
+    cor = dados.cor
+    preco = dados.preco
+    precoOriginal = dados.precoOriginal
+    emPromocao = dados.emPromocao
+  } catch {
+  }
+
+  const linhas = [
+    'Olá!',
+    'Tenho interesse neste produto da Mersan Calçados.',
+    `Produto: ${nomeProduto}`
+  ]
+
+  if (referencia) linhas.push(`Referência: ${referenciaParaCliente(referencia)}`)
+  if (cor) linhas.push(`Cor: ${cor}`)
+  if (tamanho) linhas.push(`Tamanho: ${tamanho}`)
+
+  if (preco != null) {
+    if (emPromocao && precoOriginal > preco) {
+      linhas.push(`De: R$ ${precoOriginal.toFixed(2).replace('.', ',')}`)
+      linhas.push(`Por: R$ ${preco.toFixed(2).replace('.', ',')}`)
+    } else {
+      linhas.push(`Valor: R$ ${preco.toFixed(2).replace('.', ',')}`)
+    }
+
+    const maxParcelas = Math.min(MAX_PARCELAS, Math.max(1, Math.floor(preco / PARCELA_MINIMA)))
+    const parcelasFinal =
+      parcelasEscolhidas && parcelasEscolhidas >= 1 && parcelasEscolhidas <= maxParcelas
+        ? parcelasEscolhidas
+        : maxParcelas
+    if (parcelasFinal > 1) {
+      const valorParcela = (preco / parcelasFinal).toFixed(2).replace('.', ',')
+      linhas.push(`Parcelamento: ${parcelasFinal}x de R$ ${valorParcela}`)
+    }
+  }
+
+  linhas.push(`Link: ${linkProduto}`)
+  linhas.push('')
+  linhas.push('Gostaria de mais informações.')
+
+  const mensagem = linhas.join('\n')
+  const linkWhatsApp = `https://wa.me/${vendedor.whatsapp}?text=${encodeURIComponent(mensagem)}`
+
+  try {
+    return Response.redirect(linkWhatsApp, 302)
+  } catch {
+    return paginaLinkManual(linkWhatsApp, `Toque no botão abaixo para falar com ${vendedor.nome}:`)
+  }
+}
+
+function jsonResponse(data, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      ...extraHeaders
+    }
+  })
+}
