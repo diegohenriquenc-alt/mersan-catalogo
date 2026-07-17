@@ -67,7 +67,6 @@ function PainelFotos({ senha }) {
   const [codigo, setCodigo] = useState('')
   const [arquivo, setArquivo] = useState(null)
   const [categoria, setCategoria] = useState('')
-  const [promocao, setPromocao] = useState(false)
   const [editando, setEditando] = useState(null)
   const [renomeando, setRenomeando] = useState(null)
   const [novaReferencia, setNovaReferencia] = useState('')
@@ -275,7 +274,6 @@ function PainelFotos({ senha }) {
         const form = new FormData()
         form.append('codigo', codigo)
         form.append('categoria', categoria)
-        form.append('promocao', promocao ? 'true' : 'false')
         try {
           const arquivoComprimido = await comprimirImagem(arquivo)
           form.append('arquivo', arquivoComprimido)
@@ -294,19 +292,17 @@ function PainelFotos({ senha }) {
             'X-Admin-Password': senha,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ codigo, categoria, promocao })
+          body: JSON.stringify({ codigo, categoria })
         })
-      }
-
+  }
       const data = await resp.json()
       if (!resp.ok) {
         setStatus({ tipo: 'erro', texto: data.error || 'Falha ao enviar.' })
-        } else {
+      } else {
         setStatus({ tipo: 'sucesso', texto: `Foto salva para "${data.codigo}".` })
         setCodigo('')
         setArquivo(null)
         setCategoria('')
-        setPromocao(false)
         setPreview(null)
         setEditando(null)
         carregarLista()
@@ -322,7 +318,6 @@ function PainelFotos({ senha }) {
     setEditando(foto.codigo)
     setCodigo(foto.codigo)
     setCategoria(foto.categoria || '')
-    setPromocao(Boolean(foto.promocao))
     setArquivo(null)
     setPreview(`/produto-foto/${encodeURIComponent(foto.codigo)}`)
     setStatus(null)
@@ -333,7 +328,6 @@ function PainelFotos({ senha }) {
     setEditando(null)
     setCodigo('')
     setCategoria('')
-    setPromocao(false)
     setArquivo(null)
     setPreview(null)
     setStatus(null)
@@ -454,15 +448,6 @@ function PainelFotos({ senha }) {
             </select>
           </label>
 
-          <label style={styles.checkboxLabel}>
-            <input
-              type="checkbox"
-              checked={promocao}
-              onChange={(e) => setPromocao(e.target.checked)}
-            />
-            Mostrar selo de promoção neste produto
-          </label>
-
           {preview && <img src={preview} alt="Pré-visualização" style={styles.preview} />}
 
           {status && (
@@ -507,7 +492,6 @@ function PainelFotos({ senha }) {
                     <span style={styles.codigoCompacto}>{f.codigo}</span>
                     <span style={styles.metaCompacta}>
                       {f.categoria || 'Sem categoria'}
-                      {f.promocao && ' • 🔴 promo'}
                       {f.tamanho != null && ` • ${Math.round(f.tamanho / 1024)}KB`}
                       {f.tamanho > 400 * 1024 ? ' ⚠️' : ''}
                     </span>
@@ -945,4 +929,4 @@ const styles = {
     borderRadius: '999px',
     cursor: 'pointer'
   }
-}
+    }
