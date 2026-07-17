@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import ApiService from '../services/api.js'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
@@ -37,31 +36,11 @@ export default function Catalogo() {
       setLoading(true)
       setErro(null)
       try {
-        const resp = await fetch('/api/fotos-publicas')
+        const resp = await fetch('/api/catalogo')
         const data = await resp.json()
-        const lista = data.produtos || []
-
-        const resultados = await Promise.all(
-          lista.map(async (item) => {
-            try {
-              const info = await ApiService.buscarProduto(item.codigo)
-              if (!info.estoque || info.estoque.length === 0) return null
-              return {
-                codigo: item.codigo,
-                categoria: item.categoria,
-                promocao: info.emPromocao,
-                nome: info.nome,
-                preco: info.preco,
-                precoOriginal: info.precoOriginal
-              }
-            } catch {
-              return null
-            }
-          })
-        )
 
         if (!cancelado) {
-          setProdutos(resultados.filter(Boolean))
+          setProdutos(data.produtos || [])
         }
       } catch {
         if (!cancelado) setErro('Não foi possível carregar o catálogo agora.')
