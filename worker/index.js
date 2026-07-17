@@ -2,13 +2,14 @@
 //
 // Rotas:
 //  /produto/{codigo}             -> página do produto com meta tags Open
-//                                    Graph dinâmicas (Etapa 4)
+//                                    Graph dinâmicas
 //  /api/produto?termo=...        -> dados do produto na API da Mersan
 //  /api/estoque?referencia=...   -> estoque na loja 261
 //  /produto-foto/{codigo}        -> serve a foto do produto (armazenada no KV)
 //  /api/admin/login              -> valida a senha do painel administrativo
 //  /api/admin/foto (POST)        -> envia/troca a foto de um produto
 //  /api/admin/foto (PATCH)       -> edita categoria/promoção sem trocar a foto
+//  /api/admin/foto/renomear (POST) -> muda a referência sem trocar a foto
 //  /api/admin/foto (DELETE)      -> exclui a foto de um produto
 //  /api/admin/fotos (GET)        -> lista as fotos já cadastradas
 //  qualquer outra rota           -> site estático (React) via binding ASSETS
@@ -49,6 +50,10 @@ export default {
 
     if (url.pathname === '/api/admin/foto' && request.method === 'PATCH') {
       return handleAdminAtualizarFoto(request, env)
+    }
+
+    if (url.pathname === '/api/admin/foto/renomear' && request.method === 'POST') {
+      return handleAdminRenomearFoto(request, env)
     }
 
     if (url.pathname === '/api/admin/foto' && request.method === 'DELETE') {
@@ -402,6 +407,47 @@ async function handleAdminAtualizarFoto(request, env) {
   return jsonResponse({ ok: true, codigo: chave })
 }
 
+async function handleAdminRenomearFoto(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const corpo = await request.json().catch(() => null)
+  const codigoAntigo = corpo?.codigoAntigo
+  const codigoNovo = corpo?.codigoNovo
+
+  if (!codigoAntigo || !codigoNovo) {
+    return jsonResponse({ error: 'Envie "codigoAntigo" e "codigoNovo".' }, 400)
+  }
+
+  const chaveAntiga = normalizarCodigo(codigoAntigo)
+  const chaveNova = normalizarCodigo(codigoNovo)
+
+  if (chaveAntiga === chaveNova) {
+    return jsonResponse({ ok: true, codigo: chaveNova })
+  }
+
+  const resultado = await env.FOTOS.getWithMetadata(chaveAntiga, 'arrayBuffer')
+  if (!resultado || !resultado.value) {
+    return jsonResponse({ error: 'Foto não encontrada para o código atual.' }, 404)
+  }
+
+  const jaExiste = await env.FOTOS.get(chaveNova)
+  if (jaExiste) {
+    return jsonResponse(
+      { error: 'Já existe uma foto cadastrada com essa referência. Exclua a antiga primeiro se quiser substituir.' },
+      409
+    )
+  }
+
+  await env.FOTOS.put(chaveNova, resultado.value, {
+    metadata: resultado.metadata || {}
+  })
+  await env.FOTOS.delete(chaveAntiga)
+
+  return jsonResponse({ ok: true, codigo: chaveNova })
+}
+
 async function handleAdminExcluirFoto(request, url, env) {
   if (!autenticado(request, env)) {
     return jsonResponse({ error: 'Senha incorreta.' }, 401)
@@ -627,20 +673,4 @@ async function handleIrVendedor(request, url, env) {
 
   try {
     return Response.redirect(linkWhatsApp, 302)
-  } catch {
-    return paginaLinkManual(linkWhatsApp, `Toque no botão abaixo para falar com ${vendedor.nome}:`)
-  }
-}
-
-// ---------- Utilitário ----------
-
-function jsonResponse(data, status = 200, extraHeaders = {}) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      ...extraHeaders
-    }
-  })
-                        }
+  } catch
