@@ -491,6 +491,234 @@ async function handleAdminExcluirFoto(request, url, env) {
   if (!codigo) {
     return jsonResponse({ error: 'Parâmetro "codigo" é obrigatório.' }, 400)
   }
+  async function handleAdminListarFotos(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const listagem = await env.FOTOS.list({ limit: 200 })
+  const fotos = listagem.keys
+    .filter((k) => k.name !== VENDEDORES_CHAVE)
+    .map((k) => ({
+      codigo: k.name,
+      tamanho: k.metadata?.tamanho || null,
+      categoria: k.metadata?.categoria || '',
+      modificadoEm: k.metadata?.atualizadoEm || null
+    }))
+
+  return jsonResponse({ fotos, truncado: !listagem.list_complete })
+}
+
+async function handleFotosPublicas(env) {
+  const listagem = await env.FOTOS.list({ limit: 200 })
+  const produtos = listagem.keys
+    .filter((k) => k.name !== VENDEDORES_CHAVE)
+    .map((k) => ({
+      codigo: k.name,
+      categoria: k.metadata?.categoria || ''
+    }))
+
+  return jsonResponse({ produtos, truncado: !listagem.list_complete })
+}
+
+const VENDEDORES_CHAVE = '_vendedores'
+
+async function getVendedores(env) {
+  const bruto = await env.FOTOS.get(VENDEDORES_CHAVE)
+  if (!bruto) return []
+  try {
+    const lista = JSON.parse(bruto)
+    return Array.isArray(lista) ? lista : []
+  } catch {
+    return []
+  }
+}
+
+async function salvarVendedores(env, lista) {
+  await env.FOTOS.put(VENDEDORES_CHAVE, JSON.stringify(lista))
+}
+
+async function handleVendedoresPublico(env) {
+  const lista = await getVendedores(env)
+  const publico = lista.map((v) => ({ id: v.id, nome: v.nome }))
+  return jsonResponse({ vendedores: publico })
+}
+
+async function handleAdminListarVendedores(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+  const lista = await getVendedores(env)
+  return jsonResponse({ vendedores: lista })
+}
+
+async function handleAdminSalvarVendedor(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const corpo = await request.json().catch(() => null)
+  const nome = corpo?.nome?.trim()
+  const whatsapp = corpo?.whatsapp?.replace(/\D/g, '')
+
+  if (!nome || !whatsapp) {
+    return jsonResponse({ error: 'Envie "nome" e "whatsapp".' }, 400)
+  }
+
+  const lista = await getVendedores(env)
+  const id = corpo?.id || crypto.randomUUID()
+  const existente = lista.findIndex((v) => v.id === id)
+  const registro = { id, nome, whatsapp }
+
+  if (existente >= 0) {
+    lista[existente] = registro
+  } else {
+    lista.push(registro)
+  }
+
+  await salvarVendedores(env, lista)
+  return jsonResponse({ ok: true, vendedor: registro })
+}
+
+async function handleAdminExcluirVendedor(request, url, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const id = url.searchParams.get('id')
+  if (!id) {
+    return jsonResponse({ error: 'Parâmetro "id" é obrigatório.' }, 400)
+  }
+
+  const lista = await getVendedores(env)
+  const nova = lista.filter((v) => v.id !== id)
+  await salvarVendedores(env, nova)
+  return jsonResponse({ ok: true })
+}
+
+function paginaLinkManual(linkWhatsApp, mensagemTopo) {
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mersan Calçados</title>
+<meta http-equiv="refresh" content="0; url=${escapeHtml(linkWhatsApp)}">
+</head>
+<body style="font-family:sans-serif;text-align:center;padding:40px 20px;">
+  <p style="margin-bottom:24px;">${escapeHtml(mensagemTopo)}</p>
+  <a href="${escapeHtml(linkWhatsApp)}" style="display:inline-block;padding:14px 28px;background:#25D366;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">
+    Abrir WhatsApp
+  </a>
+</body>
+</html>`
+
+  return new Response(html, {
+    status: 200,
+    headers: { 'Content-Type': 'text/html; charset=UTF-8' }
+  })
+}
+
+async function handleIrVendedor(request, url, env) {
+  const vendedorId = url.searchParams.get('vendedor')
+  const codigo = url.searchParams.get('codigo')
+  const tamanho = url.searchParams.get('tamanho')
+  const parcelasEscolhidas = Number(url.searchParams.get('parcelas')) || null
+
+  if (!vendedorId || !codigo) {
+    return new Response('Link inválido.', { status: 400 })
+  }
+
+  const lista = await getVendedores(env)
+  const vendedor = lista.find((v) => v.id === vendedorId)
+
+  if (!vendedor) {
+    return new Response('Vendedor não encontrado. Peça para recadastrar esse vendedor no painel admin.', { status: 404 })
+  }
+
+  const numeroValido = /^\d{10,15}$/.test(vendedor.whatsapp || '')
+  if (!numeroValido) {
+    return new Response(
+      `O WhatsApp cadastrado para "${vendedor.nome}" está inválido ("${vendedor.whatsapp || 'vazio'}"). Corrija no painel admin (só números, com DDI e DDD, ex: 5511999999999).`,
+      { status: 500 }
+    )
+  }
+
+  const linkProduto = `${url.origin}/produto/${encodeURIComponent(codigo)}?v=${Date.now()}`
+
+  let nomeProduto = codigo
+  let referencia = null
+  let cor = null
+  let preco = null
+  let precoOriginal = null
+  let emPromocao = false
+  try {
+    const controlador = new AbortController()
+    const tempoLimite = setTimeout(() => controlador.abort(), 4000)
+    const dados = await buscarDadosProdutoMersan(codigo, controlador.signal)
+    clearTimeout(tempoLimite)
+    nomeProduto = dados.nome
+    referencia = dados.referencia
+    cor = dados.cor
+    preco = dados.preco
+    precoOriginal = dados.precoOriginal
+    emPromocao = dados.emPromocao
+  } catch {
+  }
+
+  const linhas = [
+    'Olá!',
+    'Tenho interesse neste produto da Mersan Calçados.',
+    `Produto: ${nomeProduto}`
+  ]
+
+  if (referencia) linhas.push(`Referência: ${referenciaParaCliente(referencia)}`)
+  if (cor) linhas.push(`Cor: ${cor}`)
+  if (tamanho) linhas.push(`Tamanho: ${tamanho}`)
+
+  if (preco != null) {
+    if (emPromocao && precoOriginal > preco) {
+      linhas.push(`De: R$ ${precoOriginal.toFixed(2).replace('.', ',')}`)
+      linhas.push(`Por: R$ ${preco.toFixed(2).replace('.', ',')}`)
+    } else {
+      linhas.push(`Valor: R$ ${preco.toFixed(2).replace('.', ',')}`)
+    }
+
+    const maxParcelas = Math.min(MAX_PARCELAS, Math.max(1, Math.floor(preco / PARCELA_MINIMA)))
+    const parcelasFinal =
+      parcelasEscolhidas && parcelasEscolhidas >= 1 && parcelasEscolhidas <= maxParcelas
+        ? parcelasEscolhidas
+        : maxParcelas
+    if (parcelasFinal > 1) {
+      const valorParcela = (preco / parcelasFinal).toFixed(2).replace('.', ',')
+      linhas.push(`Parcelamento: ${parcelasFinal}x de R$ ${valorParcela}`)
+    }
+  }
+
+  linhas.push(`Link: ${linkProduto}`)
+  linhas.push('')
+  linhas.push('Gostaria de mais informações.')
+
+  const mensagem = linhas.join('\n')
+  const linkWhatsApp = `https://wa.me/${vendedor.whatsapp}?text=${encodeURIComponent(mensagem)}`
+
+  try {
+    return Response.redirect(linkWhatsApp, 302)
+  } catch {
+    return paginaLinkManual(linkWhatsApp, `Toque no botão abaixo para falar com ${vendedor.nome}:`)
+  }
+}
+
+function jsonResponse(data, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      ...extraHeaders
+    }
+  })
+}
 
   await env.FOTOS.delete(normalizarCodigo(codigo))
   return jsonResponse({ ok: true })
