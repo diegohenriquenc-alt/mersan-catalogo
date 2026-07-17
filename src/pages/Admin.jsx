@@ -252,7 +252,6 @@ function PainelFotos({ senha }) {
 
     return new File([ultimoBlob], 'foto.jpg', { type: 'image/jpeg' })
   }
-
   async function handleEnviar(e) {
     e.preventDefault()
     if (!codigo) return
@@ -376,7 +375,7 @@ function PainelFotos({ senha }) {
                 placeholder="Ex: 7770005662888"
                 style={{ ...styles.input, flex: 1 }}
                 disabled={Boolean(editando)}
-                />
+              />
               <button type="button" onClick={abrirLeitor} style={styles.botaoBipar}>
                 📷 Bipar
               </button>
@@ -516,7 +515,7 @@ function PainelFotos({ senha }) {
                   Excluir
                 </button>
               </li>
-            ))}
+      ))}
           </ul>
         </div>
       </div>
