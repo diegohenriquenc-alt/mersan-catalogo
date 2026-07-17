@@ -8,13 +8,14 @@
 //  /produto-foto/{codigo}        -> serve a foto do produto (armazenada no KV)
 //  /api/admin/login              -> valida a senha do painel administrativo
 //  /api/admin/foto (POST)        -> envia/troca a foto de um produto
+//  /api/admin/foto (PATCH)       -> edita categoria/promoção sem trocar a foto
 //  /api/admin/foto (DELETE)      -> exclui a foto de um produto
 //  /api/admin/fotos (GET)        -> lista as fotos já cadastradas
 //  qualquer outra rota           -> site estático (React) via binding ASSETS
 
 const MERSAN_BASE = 'https://credito.mersan.co/api/v1'
 const LOJA = 261
-const CACHE_TTL_SECONDS = 30 * 60 // 30 minutos, conforme briefing
+const CACHE_TTL_SECONDS = 30 * 60
 const PARCELA_MINIMA = 29.99
 const MAX_PARCELAS = 10
 
@@ -44,6 +45,10 @@ export default {
 
     if (url.pathname === '/api/admin/foto' && request.method === 'POST') {
       return handleAdminUploadFoto(request, env)
+    }
+
+    if (url.pathname === '/api/admin/foto' && request.method === 'PATCH') {
+      return handleAdminAtualizarFoto(request, env)
     }
 
     if (url.pathname === '/api/admin/foto' && request.method === 'DELETE') {
@@ -78,7 +83,6 @@ export default {
       return handleIrVendedor(request, url, env)
     }
 
-    // Qualquer outra rota: serve o site estático (React) normalmente.
     return env.ASSETS.fetch(request)
   }
 }
@@ -296,9 +300,6 @@ function normalizarCodigo(codigo) {
   return codigo.trim().replace(/\s+/g, '_')
 }
 
-// A referência que vem da Mersan às vezes traz o número do calçado colado
-// no final (ex: "001 145 8106-41"). Para o cliente, mostramos só a parte
-// fixa da referência, sem esse sufixo de tamanho.
 function referenciaParaCliente(referencia) {
   if (!referencia) return referencia
   return referencia.replace(/[-\s]\d{2,3}$/, '').trim()
@@ -368,6 +369,39 @@ async function handleAdminUploadFoto(request, env) {
   return jsonResponse({ ok: true, codigo: chave })
 }
 
+async function handleAdminAtualizarFoto(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const corpo = await request.json().catch(() => null)
+  const codigo = corpo?.codigo
+  const categoria = corpo?.categoria || ''
+  const promocao = Boolean(corpo?.promocao)
+
+  if (!codigo) {
+    return jsonResponse({ error: 'Parâmetro "codigo" é obrigatório.' }, 400)
+  }
+
+  const chave = normalizarCodigo(codigo)
+  const resultado = await env.FOTOS.getWithMetadata(chave, 'arrayBuffer')
+
+  if (!resultado || !resultado.value) {
+    return jsonResponse({ error: 'Foto não encontrada para esse código.' }, 404)
+  }
+
+  await env.FOTOS.put(chave, resultado.value, {
+    metadata: {
+      contentType: resultado.metadata?.contentType || 'image/jpeg',
+      tamanho: resultado.metadata?.tamanho || resultado.value.byteLength,
+      categoria,
+      promocao
+    }
+  })
+
+  return jsonResponse({ ok: true, codigo: chave })
+}
+
 async function handleAdminExcluirFoto(request, url, env) {
   if (!autenticado(request, env)) {
     return jsonResponse({ error: 'Senha incorreta.' }, 401)
@@ -401,8 +435,6 @@ async function handleAdminListarFotos(request, env) {
   return jsonResponse({ fotos, truncado: !listagem.list_complete })
 }
 
-// ---------- Vitrine pública (lista de fotos, sem senha) ----------
-
 async function handleFotosPublicas(env) {
   const listagem = await env.FOTOS.list({ limit: 200 })
   const produtos = listagem.keys
@@ -415,8 +447,6 @@ async function handleFotosPublicas(env) {
 
   return jsonResponse({ produtos, truncado: !listagem.list_complete })
 }
-
-// ---------- Vendedores ----------
 
 const VENDEDORES_CHAVE = '_vendedores'
 
@@ -613,4 +643,4 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
       ...extraHeaders
     }
   })
-    }
+                        }
