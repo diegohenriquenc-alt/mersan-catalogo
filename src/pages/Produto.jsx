@@ -19,6 +19,7 @@ export default function Produto() {
 
   const [vendedores, setVendedores] = useState([])
   const [tamanhoEscolhido, setTamanhoEscolhido] = useState(null)
+  const [parcelasEscolhidas, setParcelasEscolhidas] = useState('')
   const [vendedorEscolhido, setVendedorEscolhido] = useState(null)
 
   useEffect(() => {
@@ -28,6 +29,7 @@ export default function Produto() {
     setError(null)
     setProduto(null)
     setTamanhoEscolhido(null)
+    setParcelasEscolhidas('')
     setVendedorEscolhido(null)
 
     ApiService.buscarProduto(codigo)
@@ -62,13 +64,15 @@ export default function Produto() {
   const maxParcelas = produto?.preco
     ? Math.min(MAX_PARCELAS, Math.max(1, Math.floor(produto.preco / PARCELA_MINIMA)))
     : 1
+  const opcoesParcelas = Array.from({ length: maxParcelas }, (_, i) => i + 1)
 
-  const linkPedidoPronto = tamanhoEscolhido && vendedorEscolhido
+  const linkPedidoPronto = Boolean(tamanhoEscolhido && parcelasEscolhidas && vendedorEscolhido)
   const paramsPedido = linkPedidoPronto
     ? new URLSearchParams({
         vendedor: vendedorEscolhido,
         codigo,
-        tamanho: tamanhoEscolhido
+        tamanho: tamanhoEscolhido,
+        parcelas: String(parcelasEscolhidas)
       }).toString()
     : ''
 
@@ -117,7 +121,7 @@ export default function Produto() {
 
           {produto.estoque?.length > 0 && (
             <div style={styles.secao}>
-              <h2 style={styles.secaoTitulo}>Escolha o tamanho</h2>
+              <h2 style={styles.secaoTitulo}>1. Escolha o tamanho</h2>
               <div style={styles.opcoes}>
                 {produto.estoque.map((item) => (
                   <button
@@ -136,9 +140,31 @@ export default function Produto() {
             <p style={styles.dica}>Sem tamanhos disponíveis nesta loja no momento.</p>
           )}
 
-          {tamanhoEscolhido && vendedores.length > 0 && (
+          {tamanhoEscolhido && produto.preco != null && (
             <div style={styles.secao}>
-              <h2 style={styles.secaoTitulo}>Escolha o vendedor</h2>
+              <h2 style={styles.secaoTitulo}>2. Escolha o parcelamento</h2>
+              <select
+                value={parcelasEscolhidas}
+                onChange={(e) => setParcelasEscolhidas(Number(e.target.value))}
+                style={styles.selectParcelamento}
+              >
+                <option value="" disabled>
+                  Selecione o parcelamento ▾
+                </option>
+                {opcoesParcelas.map((n) => (
+                  <option key={n} value={n}>
+                    {n === 1
+                      ? `À vista — R$ ${produto.preco.toFixed(2).replace('.', ',')}`
+                      : `${n}x de R$ ${(produto.preco / n).toFixed(2).replace('.', ',')}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {tamanhoEscolhido && parcelasEscolhidas && vendedores.length > 0 && (
+            <div style={styles.secao}>
+              <h2 style={styles.secaoTitulo}>3. Escolha o vendedor</h2>
               <div style={styles.opcoes}>
                 {vendedores.map((v) => (
                   <button
@@ -153,7 +179,7 @@ export default function Produto() {
             </div>
           )}
 
-          {tamanhoEscolhido && vendedores.length === 0 && (
+          {tamanhoEscolhido && parcelasEscolhidas && vendedores.length === 0 && (
             <p style={styles.dica}>Nenhum vendedor cadastrado ainda.</p>
           )}
 
@@ -303,6 +329,17 @@ const styles = {
     borderRadius: '999px',
     cursor: 'pointer'
   },
+  selectParcelamento: {
+    width: '100%',
+    padding: '14px 16px',
+    fontSize: '15px',
+    fontWeight: 600,
+    color: '#111111',
+    background: '#f2f2f2',
+    border: '1px solid #e6e6e6',
+    borderRadius: '12px',
+    appearance: 'auto'
+  },
   dica: {
     fontSize: '13px',
     color: '#6b6b6b',
@@ -343,4 +380,4 @@ const styles = {
     borderRadius: '999px',
     cursor: 'not-allowed'
   }
-      }
+              }
