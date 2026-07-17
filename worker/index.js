@@ -92,8 +92,6 @@ export default {
   }
 }
 
-// ---------- Produto / Estoque ----------
-
 async function buscarDadosProdutoMersan(termo, signal) {
   const mersanUrl = `${MERSAN_BASE}/buscapreco/${encodeURIComponent(termo)}/${LOJA}`
 
@@ -226,8 +224,6 @@ async function handleEstoque(request, url, ctx) {
   return response
 }
 
-// ---------- Página do produto com Open Graph dinâmico ----------
-
 async function handleProdutoPage(request, url, env, ctx) {
   const codigo = decodeURIComponent(url.pathname.replace('/produto/', ''))
 
@@ -299,8 +295,6 @@ function escapeHtml(str) {
     .replaceAll("'", '&#39;')
 }
 
-// ---------- Fotos ----------
-
 function normalizarCodigo(codigo) {
   return codigo.trim().replace(/\s+/g, '_')
 }
@@ -343,8 +337,7 @@ async function handleAdminLogin(request, env) {
 async function handleAdminUploadFoto(request, env) {
   if (!autenticado(request, env)) {
     return jsonResponse({ error: 'Senha incorreta.' }, 401)
-  }
-
+}
   const form = await request.formData()
   const codigo = form.get('codigo')
   const arquivo = form.get('arquivo')
@@ -673,4 +666,18 @@ async function handleIrVendedor(request, url, env) {
 
   try {
     return Response.redirect(linkWhatsApp, 302)
-  } catch
+  } catch {
+    return paginaLinkManual(linkWhatsApp, `Toque no botão abaixo para falar com ${vendedor.nome}:`)
+  }
+}
+
+function jsonResponse(data, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      ...extraHeaders
+    }
+  })
+                        }
