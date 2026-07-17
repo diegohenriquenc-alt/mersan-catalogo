@@ -467,6 +467,36 @@ async function handleAdminExcluirVendedor(request, url, env) {
   return jsonResponse({ ok: true })
 }
 
+// Uma página HTML mínima com um botão manual. É o último degrau de
+// segurança: se por qualquer motivo o redirecionamento automático não
+// puder ser feito, a pessoa ainda assim vê algo clicável, nunca uma tela
+// genuinamente em branco.
+function paginaLinkManual(linkWhatsApp, mensagemTopo) {
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mersan Calçados</title>
+<meta http-equiv="refresh" content="0; url=${escapeHtml(linkWhatsApp)}">
+</head>
+<body style="font-family:sans-serif;text-align:center;padding:40px 20px;">
+  <p style="margin-bottom:24px;">${escapeHtml(mensagemTopo)}</p>
+  <a href="${escapeHtml(linkWhatsApp)}" style="display:inline-block;padding:14px 28px;background:#25D366;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">
+    Abrir WhatsApp
+  </a>
+</body>
+</html>`
+
+  return new Response(html, {
+    status: 200,
+    headers: { 'Content-Type': 'text/html; charset=UTF-8' }
+  })
+}
+
+// Monta a mensagem final e redireciona para o WhatsApp do vendedor
+// escolhido — o número de telefone nunca passa pelo navegador da pessoa,
+// só o link final do wa.me.
 async function handleIrVendedor(request, url, env) {
   const vendedorId = url.searchParams.get('vendedor')
   const codigo = url.searchParams.get('codigo')
@@ -481,55 +511,54 @@ async function handleIrVendedor(request, url, env) {
   const vendedor = lista.find((v) => v.id === vendedorId)
 
   if (!vendedor) {
-    return new Response('Vendedor não encontrado.', { status: 404 })
+    return new Response('Vendedor não encontrado. Peça para recadastrar esse vendedor no painel admin.', { status: 404 })
   }
 
+  const numeroValido = /^\d{10,15}$/.test(vendedor.whatsapp || '')
+  if (!numeroValido) {
+    return new Response(
+      `O WhatsApp cadastrado para "${vendedor.nome}" está inválido ("${vendedor.whatsapp || 'vazio'}"). Corrija no painel admin (só números, com DDI e DDD, ex: 5511999999999).`,
+      { status: 500 }
+    )
+  }
+
+  const linkProduto = `${url.origin}/produto/${encodeURIComponent(codigo)}`
+
+  let nomeProduto = codigo
+  let preco = null
   try {
-    let nomeProduto = codigo
-    let preco = null
-    try {
-      const controlador = new AbortController()
-      const tempoLimite = setTimeout(() => controlador.abort(), 4000)
+    const controlador = new AbortController()
+    const tempoLimite = setTimeout(() => controlador.abort(), 4000)
+    const dados = await buscarDadosProdutoMersan(codigo, controlador.signal)
+    clearTimeout(tempoLimite)
+    nomeProduto = dados.nome
+    preco = dados.preco
+  } catch {
+    // Sem dados do produto (demorou, ou deu erro): segue com o código mesmo.
+  }
 
-      const dados = await buscarDadosProdutoMersan(codigo, controlador.signal)
-      clearTimeout(tempoLimite)
+  const linhas = ['Olá! Tenho interesse neste produto da Mersan Calçados:', nomeProduto]
 
-      nomeProduto = dados.nome
-      preco = dados.preco
-    } catch {
-      // Sem dados do produto (demorou, ou deu erro): usa o código mesmo
-      // assim, não trava o link.
+  if (tamanho) linhas.push(`Tamanho: ${tamanho}`)
+
+  if (preco != null) {
+    if (parcelas > 1) {
+      const valorParcela = (preco / parcelas).toFixed(2).replace('.', ',')
+      linhas.push(`Parcelamento: ${parcelas}x de R$ ${valorParcela} (parcela mínima R$ 29,99)`)
+    } else {
+      linhas.push(`Valor: R$ ${preco.toFixed(2).replace('.', ',')}`)
     }
+  }
 
-    const linkProduto = `${url.origin}/produto/${encodeURIComponent(codigo)}`
+  linhas.push(linkProduto)
 
-    const linhas = [
-      'Olá! Tenho interesse neste produto da Mersan Calçados:',
-      nomeProduto
-    ]
+  const mensagem = linhas.join('\n')
+  const linkWhatsApp = `https://wa.me/${vendedor.whatsapp}?text=${encodeURIComponent(mensagem)}`
 
-    if (tamanho) linhas.push(`Tamanho: ${tamanho}`)
-
-    if (preco != null) {
-      if (parcelas > 1) {
-        const valorParcela = (preco / parcelas).toFixed(2).replace('.', ',')
-        linhas.push(`Parcelamento: ${parcelas}x de R$ ${valorParcela} (parcela mínima R$ 29,99)`)
-      } else {
-        linhas.push(`Valor: R$ ${preco.toFixed(2).replace('.', ',')}`)
-      }
-    }
-
-    linhas.push(linkProduto)
-
-    const mensagem = linhas.join('\n')
-    const linkWhatsApp = `https://wa.me/${vendedor.whatsapp}?text=${encodeURIComponent(mensagem)}`
-
+  try {
     return Response.redirect(linkWhatsApp, 302)
   } catch {
-    const linkProduto = `${url.origin}/produto/${encodeURIComponent(codigo)}`
-    const mensagemSimples = `Olá! Tenho interesse neste produto da Mersan Calçados:\n${linkProduto}`
-    const linkFallback = `https://wa.me/${vendedor.whatsapp}?text=${encodeURIComponent(mensagemSimples)}`
-    return Response.redirect(linkFallback, 302)
+    return paginaLinkManual(linkWhatsApp, `Toque no botão abaixo para falar com ${vendedor.nome}:`)
   }
 }
 
@@ -544,4 +573,4 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
       ...extraHeaders
     }
   })
-    }
+      }
