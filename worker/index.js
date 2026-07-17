@@ -954,10 +954,13 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
   })
 }
 // ---------- Catálogo pronto (performance) ----------
+const CATALOGO_CACHE_CHAVE = '_catalogo_pronto'
 
 async function preAquecerCatalogo(env) {
   const listagem = await env.FOTOS.list({ limit: 200 })
-  const itens = listagem.keys.filter((k) => k.name !== VENDEDORES_CHAVE)
+  const itens = listagem.keys.filter(
+    (k) => k.name !== VENDEDORES_CHAVE && k.name !== CATALOGO_CACHE_CHAVE
+  )
 
   const resultados = await Promise.all(
     itens.map(async (k) => {
@@ -987,29 +990,20 @@ async function preAquecerCatalogo(env) {
 }
 
 async function handleCatalogoPronto(env, ctx) {
-  const cache = caches.default
-  const chaveCache = new Request('https://mersan-catalogo.diegohenriquenc.workers.dev/__catalogo-pronto-interno')
-
-  const emCache = await cache.match(chaveCache)
-  if (emCache) {
-    return emCache
+  const bruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
+  if (bruto) {
+    return jsonResponse(JSON.parse(bruto), 200, {
+      'Cache-Control': 'public, max-age=120'
+    })
   }
 
   const payload = await preAquecerCatalogo(env)
-  const resposta = jsonResponse(payload, 200, {
-    'Cache-Control': `public, max-age=1800`
-  })
+  ctx.waitUntil(env.FOTOS.put(CATALOGO_CACHE_CHAVE, JSON.stringify(payload)))
 
-  ctx.waitUntil(cache.put(chaveCache, resposta.clone()))
-
-  return resposta
+  return jsonResponse(payload, 200)
 }
+
 async function preAquecerCatalogoAgendado(env) {
   const payload = await preAquecerCatalogo(env)
-  const resposta = jsonResponse(payload, 200, {
-    'Cache-Control': `public, max-age=1800`
-  })
-  const cache = caches.default
-  const chaveCache = new Request('https://mersan-catalogo.diegohenriquenc.workers.dev/__catalogo-pronto-interno')
-  await cache.put(chaveCache, resposta)
+  await env.FOTOS.put(CATALOGO_CACHE_CHAVE, JSON.stringify(payload))
 }
