@@ -811,3 +811,68 @@ async function handleAdminSalvarVendedor(request, env) {
   await salvarVendedores(env, lista)
   return jsonResponse({ ok: true, vendedor: registro })
 }
+async function handleAdminExcluirVendedor(request, url, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const id = url.searchParams.get('id')
+  if (!id) {
+    return jsonResponse({ error: 'Parâmetro "id" é obrigatório.' }, 400)
+  }
+
+  const lista = await getVendedores(env)
+  const nova = lista.filter((v) => v.id !== id)
+  await salvarVendedores(env, nova)
+  return jsonResponse({ ok: true })
+}
+
+function paginaLinkManual(linkWhatsApp, mensagemTopo) {
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mersan Calçados</title>
+<meta http-equiv="refresh" content="0; url=${escapeHtml(linkWhatsApp)}">
+</head>
+<body style="font-family:sans-serif;text-align:center;padding:40px 20px;">
+  <p style="margin-bottom:24px;">${escapeHtml(mensagemTopo)}</p>
+  <a href="${escapeHtml(linkWhatsApp)}" style="display:inline-block;padding:14px 28px;background:#25D366;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">
+    Abrir WhatsApp
+  </a>
+</body>
+</html>`
+
+  return new Response(html, {
+    status: 200,
+    headers: { 'Content-Type': 'text/html; charset=UTF-8' }
+  })
+}
+
+async function handleIrVendedor(request, url, env) {
+  const vendedorId = url.searchParams.get('vendedor')
+  const codigo = url.searchParams.get('codigo')
+  const tamanho = url.searchParams.get('tamanho')
+  const parcelasEscolhidas = Number(url.searchParams.get('parcelas')) || null
+
+  if (!vendedorId || !codigo) {
+    return new Response('Link inválido.', { status: 400 })
+  }
+
+  const lista = await getVendedores(env)
+  const vendedor = lista.find((v) => v.id === vendedorId)
+
+  if (!vendedor) {
+    return new Response('Vendedor não encontrado. Peça para recadastrar esse vendedor no painel admin.', { status: 404 })
+  }
+
+  const numeroValido = /^\d{10,15}$/.test(vendedor.whatsapp || '')
+  if (!numeroValido) {
+    return new Response(
+      `O WhatsApp cadastrado para "${vendedor.nome}" está inválido ("${vendedor.whatsapp || 'vazio'}"). Corrija no painel admin (só números, com DDI e DDD, ex: 5511999999999).`,
+      { status: 500 }
+    )
+  }
+
+  const linkProduto = `${url.origin}/produto/${encodeURIComponent(codigo)}?v=${Date.now()}`
