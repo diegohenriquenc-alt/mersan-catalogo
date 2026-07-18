@@ -36,7 +36,7 @@ export default function Catalogo() {
       setLoading(true)
       setErro(null)
       try {
-        const resp = await fetch('/api/catalogo')
+        const resp = await fetch(`/api/catalogo?t=${Date.now()}`)
         const data = await resp.json()
 
         if (!cancelado) {
