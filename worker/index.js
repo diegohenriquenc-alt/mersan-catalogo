@@ -833,6 +833,53 @@ async function preAquecerCatalogoAgendado(env) {
 }
 
 async function handleCatalogoDebug(env) {
+  const cursorBruto = await env.FOTOS.get(CATALOGO_CURSOR_CHAVE)
+  const cacheBruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
+
+  const listagem = await env.FOTOS.list({ limit: 200 })
+  const codigos = listagem.keys
+    .filter(
+      (k) =>
+        k.name !== VENDEDORES_CHAVE &&
+        k.name !== CATALOGO_CACHE_CHAVE &&
+        k.name !== CATALOGO_CURSOR_CHAVE
+    )
+    .map((k) => k.name)
+
+  let cursor = cursorBruto ? parseInt(cursorBruto, 10) : 0
+  if (!Number.isFinite(cursor) || cursor >= codigos.length) cursor = 0
+
+  const lote = codigos.slice(cursor, cursor + CATALOGO_LOTE_TAMANHO)
+
+  const diagnostico = await Promise.all(
+    lote.map(async (codigo) => {
+      try {
+        const dados = await buscarDadosProdutoMersan(codigo)
+        if (!dados.referencia) {
+          return { codigo, problema: 'sem referencia', dados }
+        }
+        const estoque = await buscarEstoqueMersan(dados.referencia)
+        return {
+          codigo,
+          referencia: dados.referencia,
+          preco: dados.preco,
+          tamanhosEmEstoque: estoque.length
+        }
+      } catch (e) {
+        return { codigo, erro: String(e && e.message ? e.message : e) }
+      }
+    })
+  )
+
+  return jsonResponse({
+    cursorGuardado: cursorBruto,
+    cursorUsado: cursor,
+    totalDeCodigos: codigos.length,
+    loteQueSeriaProcessado: lote,
+    cacheAtualBruto: cacheBruto,
+    diagnostico
+  })
+}
   const listagem = await env.FOTOS.list({ limit: 200 })
   const codigos = listagem.keys
     .filter(
