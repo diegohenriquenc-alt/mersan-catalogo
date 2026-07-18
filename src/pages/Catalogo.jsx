@@ -7,10 +7,6 @@ const MAX_PARCELAS = 10
 
 const CATEGORIAS = ['Feminino', 'Masculino', 'Infantil', 'Esportivo', 'Arezzo', 'Promoção']
 
-// Palavras que não são marca — quando a segunda palavra do nome é uma
-// dessas (um tipo/descrição, não a marca em si), a etiqueta busca a
-// palavra seguinte. É um "melhor esforço": a API da Mersan não tem um
-// campo próprio de marca, só o nome completo do produto.
 const PALAVRAS_NAO_MARCA = new Set([
   'CASUAL', 'CORRIDA', 'ESPORTIVO', 'CONFORTO', 'SOCIAL', 'INFANTIL'
 ])
@@ -27,9 +23,6 @@ function extrairMarca(nome) {
   return null
 }
 
-// O nome que vem da Mersan termina com o tamanho colado (ex: "...PRETO 40").
-// Como o tamanho já aparece destacado em vermelho separadamente, tira essa
-// repetição do final do nome.
 function limparNome(nome, tamanho) {
   if (!nome) return ''
   if (!tamanho) return nome
@@ -50,9 +43,6 @@ function formatarPreco(preco) {
   return preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-// Tela inicial do catálogo: cabeçalho premium fixo, menu lateral com
-// categorias e a grade de produtos aparecendo direto — o cliente já vê os
-// produtos assim que abre o link, sem tela de busca no meio do caminho.
 export default function Catalogo() {
   const [produtos, setProdutos] = useState([])
   const [loading, setLoading] = useState(true)
@@ -106,6 +96,19 @@ export default function Catalogo() {
 
     return lista
   }, [produtos, categoriaAtiva, termoBusca])
+
+  useEffect(() => {
+    if (produtos.length === 0) return
+    const executarOcioso = window.requestIdleCallback || ((cb) => setTimeout(cb, 300))
+    const idleId = executarOcioso(() => {
+      produtos.slice(0, 9).forEach((p) => {
+        fetch(`/api/produto?termo=${encodeURIComponent(p.codigo)}`).catch(() => {})
+      })
+    })
+    return () => {
+      if (window.cancelIdleCallback && typeof idleId === 'number') window.cancelIdleCallback(idleId)
+    }
+  }, [produtos])
 
   function selecionarCategoria(categoria) {
     setCategoriaAtiva((atual) => (atual === categoria ? null : categoria))
@@ -209,7 +212,7 @@ export default function Catalogo() {
 
                   <span style={styles.botaoWhats}>
                     <IconeWhatsApp />
-                    COMPRAR PELO WHATSAPP
+                    COMPRAR
                   </span>
                 </div>
               </Link>
@@ -312,7 +315,7 @@ const styles = {
     marginTop: '2px'
   },
   marcaMersan: {
-    fontSize: 'clamp(34px, 11vw, 52px)',
+    fontSize: 'clamp(28px, 9vw, 44px)',
     fontWeight: 900,
     color: '#14141a',
     letterSpacing: '-0.03em',
@@ -373,8 +376,8 @@ const styles = {
   },
   grade: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '14px'
+    gridTemplateColumns: 'repeat(auto-fill, minmax(102px, 1fr))',
+    gap: '8px'
   },
   card: {
     display: 'flex',
@@ -382,17 +385,17 @@ const styles = {
     height: '100%',
     textDecoration: 'none',
     color: '#14141a',
-    borderRadius: '18px',
+    borderRadius: '13px',
     overflow: 'hidden',
     background: '#ffffff',
-    boxShadow: '0 1px 3px rgba(20,20,26,0.06), 0 6px 16px rgba(20,20,26,0.05)'
+    boxShadow: '0 1px 2px rgba(20,20,26,0.06), 0 3px 10px rgba(20,20,26,0.04)'
   },
   fotoWrapper: {
     position: 'relative',
     width: '100%',
     aspectRatio: '1 / 1.05',
     background: '#ffffff',
-    padding: '10px'
+    padding: '6px'
   },
   foto: {
     width: '100%',
@@ -401,35 +404,35 @@ const styles = {
   },
   selo: {
     position: 'absolute',
-    top: '10px',
-    left: '10px',
+    top: '6px',
+    left: '6px',
     background: '#e4002b',
     color: '#ffffff',
-    fontSize: '10px',
+    fontSize: '8px',
     fontWeight: 800,
-    letterSpacing: '0.04em',
-    padding: '5px 10px',
+    letterSpacing: '0.02em',
+    padding: '3px 6px',
     borderRadius: '999px',
     zIndex: 1
   },
   cardInfo: {
-    padding: '2px 12px 12px',
+    padding: '1px 8px 8px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '3px',
+    gap: '2px',
     flex: 1
   },
   marcaEtiqueta: {
-    fontSize: '10px',
+    fontSize: '8px',
     fontWeight: 800,
-    letterSpacing: '0.08em',
+    letterSpacing: '0.06em',
     color: '#8a8a92'
   },
   nome: {
-    fontSize: '13.5px',
+    fontSize: '11px',
     fontWeight: 700,
-    lineHeight: 1.3,
-    minHeight: '2.6em',
+    lineHeight: 1.25,
+    minHeight: '2.2em',
     color: '#14141a',
     display: '-webkit-box',
     WebkitLineClamp: 2,
@@ -437,7 +440,7 @@ const styles = {
     overflow: 'hidden'
   },
   tamanhoLinha: {
-    fontSize: '11px',
+    fontSize: '9px',
     color: '#8a8a92',
     fontWeight: 600
   },
@@ -448,37 +451,37 @@ const styles = {
   precoBloco: {
     display: 'flex',
     flexDirection: 'column',
-    marginTop: '4px',
-    marginBottom: '8px'
+    marginTop: '2px',
+    marginBottom: '6px'
   },
   precoOriginal: {
-    fontSize: '12px',
+    fontSize: '10px',
     color: '#b3b3ba',
     textDecoration: 'line-through'
   },
   preco: {
-    fontSize: '19px',
+    fontSize: '14.5px',
     fontWeight: 900,
     color: '#14141a',
     letterSpacing: '-0.01em'
   },
   parcelamento: {
-    fontSize: '11px',
+    fontSize: '8.5px',
     color: '#8a8a92',
-    minHeight: '1.3em'
+    minHeight: '1.2em'
   },
   botaoWhats: {
     marginTop: 'auto',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '6px',
+    gap: '3px',
     background: '#25D366',
     color: '#ffffff',
-    fontSize: '10.5px',
+    fontSize: '8.5px',
     fontWeight: 800,
-    letterSpacing: '0.02em',
-    padding: '10px 8px',
+    letterSpacing: '0.01em',
+    padding: '7px 4px',
     borderRadius: '999px'
   },
   overlay: {
