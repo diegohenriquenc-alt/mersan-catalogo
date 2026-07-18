@@ -14,7 +14,7 @@
 
 const MERSAN_BASE = 'https://credito.mersan.co/api/v1'
 const LOJA = 261
-const CACHE_TTL_SECONDS = 30 * 60 // 30 minutos, conforme briefing
+const CACHE_TTL_SECONDS = 90 * 60 // 90 minutos — dá folga pro aquecedor completar um ciclo inteiro mesmo com o catálogo crescendo
 const PARCELA_MINIMA = 29.99
 const MAX_PARCELAS = 10
 
@@ -107,46 +107,8 @@ export default {
   // o cache sempre "quente" — assim, quase ninguém precisa esperar a
   // consulta ao vivo pra Mersan, o catálogo abre rápido quase sempre.
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(preAquecerCache(env))
     ctx.waitUntil(preAquecerCatalogoAgendado(env))
   }
-}
-
-async function preAquecerCache(env) {
-  const listagem = await env.FOTOS.list({ limit: 200 })
-  const codigos = listagem.keys
-    .map((k) => k.name)
-    .filter((nome) => nome !== VENDEDORES_CHAVE)
-
-  const cache = caches.default
-  const origem = 'https://mersan-catalogo.diegohenriquenc.workers.dev'
-
-  await Promise.all(
-    codigos.map(async (codigo) => {
-      try {
-        const dados = await buscarDadosProdutoMersan(codigo)
-
-        const urlProduto = `${origem}/api/produto?termo=${encodeURIComponent(codigo)}`
-        const respostaProduto = jsonResponse(dados, 200, {
-          'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`
-        })
-        await cache.put(new Request(urlProduto), respostaProduto)
-
-        if (dados.referencia) {
-          const estoque = await buscarEstoqueMersan(dados.referencia)
-          const urlEstoque = `${origem}/api/estoque?referencia=${encodeURIComponent(dados.referencia)}`
-          const respostaEstoque = jsonResponse(
-            { referencia: dados.referencia, loja: LOJA, estoque, atualizadoEm: new Date().toISOString() },
-            200,
-            { 'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}` }
-          )
-          await cache.put(new Request(urlEstoque), respostaEstoque)
-        }
-      } catch {
-        // Um produto com erro não deve travar o aquecimento dos outros.
-      }
-    })
-  )
 }
 
 // ---------- Produto / Estoque ----------
@@ -886,13 +848,40 @@ async function preAquecerCatalogoLote(env) {
   const inicio = indiceLote * CATALOGO_LOTE_TAMANHO
   const lote = codigos.slice(inicio, inicio + CATALOGO_LOTE_TAMANHO)
 
+  const cache = caches.default
+  const origem = 'https://mersan-catalogo.diegohenriquenc.workers.dev'
+
   const resultados = await Promise.all(
     lote.map(async (item) => {
       try {
         const dados = await buscarDadosProdutoMersan(item.codigo)
+
+        // Aproveita essa mesma consulta pra já deixar pronta a resposta
+        // individual do produto (/api/produto) — é a página do produto
+        // que se beneficia disso, abrindo instantânea depois.
+        const urlProduto = `${origem}/api/produto?termo=${encodeURIComponent(item.codigo)}`
+        await cache.put(
+          new Request(urlProduto),
+          jsonResponse(dados, 200, { 'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}` })
+        )
+
         if (!dados.referencia || dados.referencia.includes('não encontrado')) return null
 
         const estoque = await buscarEstoqueMersan(dados.referencia)
+
+        // Mesma ideia pro estoque (/api/estoque) — essa é a parte que
+        // demorava alguns segundos na tela do produto; com isso pronto
+        // de antemão, some quase toda essa espera.
+        const urlEstoque = `${origem}/api/estoque?referencia=${encodeURIComponent(dados.referencia)}`
+        await cache.put(
+          new Request(urlEstoque),
+          jsonResponse(
+            { referencia: dados.referencia, loja: LOJA, estoque, atualizadoEm: new Date().toISOString() },
+            200,
+            { 'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}` }
+          )
+        )
+
         if (!estoque.length) return null
 
         return {
@@ -900,6 +889,7 @@ async function preAquecerCatalogoLote(env) {
           categoria: item.categoria,
           promocao: dados.emPromocao,
           nome: dados.nome,
+          tamanho: dados.tamanho,
           preco: dados.preco,
           precoOriginal: dados.precoOriginal
         }
