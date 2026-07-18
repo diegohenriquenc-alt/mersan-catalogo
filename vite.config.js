@@ -2,8 +2,6 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// Configuração do Vite para o Catálogo Mersan Calçados
-// Etapa 1: estrutura base + PWA
 export default defineConfig({
   plugins: [
     react(),
@@ -20,8 +18,6 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            // Placeholder até a logo oficial da Mersan ser fornecida em PNG.
-            // Substitua estes arquivos em /public/icons/ mantendo os mesmos nomes.
             src: '/icons/icon-192.svg',
             sizes: '192x192',
             type: 'image/svg+xml'
@@ -34,19 +30,16 @@ export default defineConfig({
         ]
       },
       workbox: {
-        // /ir-vendedor, /produto-foto e /api são rotas que só existem no
-        // servidor (não são telas do app React) — sem essa exclusão, o
-        // Service Worker "sequestra" a navegação para elas e devolve o
-        // esqueleto do app em vez de deixar a rota real do servidor
-        // responder, deixando a tela em branco (foi o que travava o
-        // redirecionamento pro WhatsApp do vendedor).
         navigateFallbackDenylist: [
           /^\/ir-vendedor/,
           /^\/produto-foto\//,
           /^\/api\//
         ],
-        // Cacheia páginas de produto já visitadas para funcionamento offline
         runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/.*\/api\//,
+            handler: 'NetworkOnly'
+          },
           {
             urlPattern: /^https:\/\/.*\/produto\/.*/,
             handler: 'StaleWhileRevalidate',
@@ -54,7 +47,7 @@ export default defineConfig({
               cacheName: 'produtos-visitados',
               expiration: {
                 maxEntries: 200,
-                maxAgeSeconds: 60 * 60 * 24 * 7 // 7 dias
+                maxAgeSeconds: 60 * 60 * 24 * 7
               }
             }
           }
