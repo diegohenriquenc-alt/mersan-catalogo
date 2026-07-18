@@ -825,11 +825,6 @@ async function handleCatalogoPronto(env, ctx) {
   })
 }
 
-  await preAquecerCatalogoLote(env)
-  const pronto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
-  return jsonResponse(pronto ? JSON.parse(pronto) : { produtos: [] }, 200)
-}
-
 async function preAquecerCatalogoAgendado(env) {
   await preAquecerCatalogoLote(env)
 }
