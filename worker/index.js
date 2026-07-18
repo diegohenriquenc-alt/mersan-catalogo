@@ -747,7 +747,6 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
 const CATALOGO_CACHE_CHAVE = '_catalogo_pronto'
 const CATALOGO_CURSOR_CHAVE = '_catalogo_cursor'
 const CATALOGO_LOTE_TAMANHO = 20
-
 async function preAquecerCatalogoLote(env) {
   const listagem = await env.FOTOS.list({ limit: 200 })
   const codigos = listagem.keys
@@ -880,4 +879,3 @@ async function handleCatalogoDebug(env) {
     diagnostico
   })
 }
-  
