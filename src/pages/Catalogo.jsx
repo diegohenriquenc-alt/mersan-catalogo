@@ -42,8 +42,10 @@ export default function Catalogo() {
         if (!cancelado) {
           setProdutos(data.produtos || [])
         }
-      } catch {
-        if (!cancelado) setErro('Não foi possível carregar o catálogo agora.')
+      } catch (erroCapturado) {
+        if (!cancelado) {
+          setErro(`Não foi possível carregar o catálogo agora. (${erroCapturado?.message || erroCapturado})`)
+        }
       } finally {
         if (!cancelado) setLoading(false)
       }
