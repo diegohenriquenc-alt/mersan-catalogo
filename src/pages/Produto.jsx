@@ -48,6 +48,10 @@ export default function Produto() {
   const [error, setError] = useState(null)
   const [produto, setProduto] = useState(null)
 
+  const [estoque, setEstoque] = useState(null)
+  const [carregandoEstoque, setCarregandoEstoque] = useState(true)
+  const [erroEstoque, setErroEstoque] = useState(false)
+
   const [vendedores, setVendedores] = useState([])
   const [tamanhoEscolhido, setTamanhoEscolhido] = useState(null)
   const [parcelasEscolhidas, setParcelasEscolhidas] = useState('')
@@ -61,21 +65,52 @@ export default function Produto() {
     setLoading(true)
     setError(null)
     setProduto(null)
+    setEstoque(null)
+    setErroEstoque(false)
+    setCarregandoEstoque(true)
     setTamanhoEscolhido(null)
     setParcelasEscolhidas('')
     setVendedorEscolhido(null)
     window.scrollTo({ top: 0 })
 
-    ApiService.buscarProduto(codigo)
-      .then((data) => {
-        if (!cancelado) setProduto(data)
+    async function carregar() {
+      let dados
+      try {
+        dados = await ApiService.buscarDadosProduto(codigo)
+      } catch (err) {
+        if (!cancelado) {
+          setError(err.message || 'Não foi possível consultar o produto.')
+          setLoading(false)
+          setCarregandoEstoque(false)
+        }
+        return
+      }
+
+      if (cancelado) return
+
+      const chaveFoto = dados.codigoBarras || codigo
+      setProduto({
+        referencia: dados.referencia,
+        nome: dados.nome,
+        cor: dados.cor,
+        preco: dados.preco,
+        precoOriginal: dados.precoOriginal,
+        emPromocao: dados.emPromocao,
+        foto: `/produto-foto/${encodeURIComponent(chaveFoto)}`
       })
-      .catch((err) => {
-        if (!cancelado) setError(err.message || 'Não foi possível consultar o produto.')
-      })
-      .finally(() => {
-        if (!cancelado) setLoading(false)
-      })
+      setLoading(false)
+
+      try {
+        const estoqueResp = await ApiService.buscarEstoque(dados.referencia)
+        if (!cancelado) setEstoque(estoqueResp.estoque || [])
+      } catch {
+        if (!cancelado) setErroEstoque(true)
+      } finally {
+        if (!cancelado) setCarregandoEstoque(false)
+      }
+    }
+
+    carregar()
 
     return () => {
       cancelado = true
@@ -95,12 +130,6 @@ export default function Produto() {
     }
   }, [])
 
-  // "Você também pode gostar": usa a mesma lista já pronta e rápida do
-  // catálogo (sem nenhuma consulta nova à Mersan), filtrando pela mesma
-  // categoria. A categoria só existe nessa lista (não vem da API da
-  // Mersan), então achamos o produto atual dentro dela pra saber a
-  // categoria dele. Se não tiver categoria definida (ainda é manual
-  // hoje), cai num "mais produtos" genérico em vez de ficar vazio.
   useEffect(() => {
     let cancelado = false
     fetch(`/api/catalogo?t=${Date.now()}`)
@@ -109,12 +138,24 @@ export default function Produto() {
         if (cancelado) return
         const todosProdutos = data.produtos || []
         const atual = todosProdutos.find((p) => p.codigo === codigo)
-        const todos = todosProdutos.filter((p) => p.codigo !== codigo)
-        const mesmaCategoria = atual?.categoria
-          ? todos.filter((p) => p.categoria === atual.categoria)
+        const outros = todosProdutos.filter((p) => p.codigo !== codigo)
+
+        const marcaAtual = atual ? extrairMarca(atual.nome) : null
+        const mesmaMarca = marcaAtual
+          ? outros.filter((p) => extrairMarca(p.nome) === marcaAtual)
           : []
-        const lista = (mesmaCategoria.length > 0 ? mesmaCategoria : todos).slice(0, 10)
-        setRelacionados(lista)
+
+        let lista = [...mesmaMarca]
+        if (lista.length < 10 && atual?.categoria) {
+          const codigosJaNaLista = new Set(lista.map((p) => p.codigo))
+          const mesmaCategoria = outros.filter(
+            (p) => p.categoria === atual.categoria && !codigosJaNaLista.has(p.codigo)
+          )
+          lista = [...lista, ...mesmaCategoria]
+        }
+        if (lista.length === 0) lista = outros
+
+        setRelacionados(lista.slice(0, 10))
       })
       .catch(() => {})
     return () => {
@@ -142,6 +183,7 @@ export default function Produto() {
 
   return (
     <main style={styles.pagina}>
+      <style>{'@keyframes mersanGirar { to { transform: rotate(360deg) } }'}</style>
       <div style={styles.topo}>
         <Link to="/" style={styles.voltar}>
           <IconeVoltar />
@@ -185,25 +227,39 @@ export default function Produto() {
             )}
           </div>
 
-          {produto.estoque?.length > 0 && (
+          {produto.preco != null && (
             <div style={styles.secao}>
               <h2 style={styles.secaoTitulo}>Escolha o tamanho</h2>
-              <div style={styles.opcoes}>
-                {produto.estoque.map((item) => (
-                  <button
-                    key={item.tamanho}
-                    onClick={() => setTamanhoEscolhido(item.tamanho)}
-                    style={tamanhoEscolhido === item.tamanho ? styles.opcaoSelecionada : styles.opcao}
-                  >
-                    {item.tamanho}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
-          {!produto.estoque?.length && (
-            <p style={styles.dica}>Sem tamanhos disponíveis nesta loja no momento.</p>
+              {carregandoEstoque && (
+                <p style={styles.dicaCarregando}>
+                  <span style={styles.spinner} />
+                  Consultando numerações disponíveis…
+                </p>
+              )}
+
+              {!carregandoEstoque && erroEstoque && (
+                <p style={styles.dica}>Não foi possível consultar o estoque agora. Atualize a página pra tentar de novo.</p>
+              )}
+
+              {!carregandoEstoque && !erroEstoque && estoque?.length === 0 && (
+                <p style={styles.dica}>Sem tamanhos disponíveis nesta loja no momento.</p>
+              )}
+
+              {!carregandoEstoque && estoque?.length > 0 && (
+                <div style={styles.opcoes}>
+                  {estoque.map((item) => (
+                    <button
+                      key={item.tamanho}
+                      onClick={() => setTamanhoEscolhido(item.tamanho)}
+                      style={tamanhoEscolhido === item.tamanho ? styles.opcaoSelecionada : styles.opcao}
+                    >
+                      {item.tamanho}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
 
           {tamanhoEscolhido && produto.preco != null && (
@@ -479,6 +535,23 @@ const styles = {
     color: '#8a8a92',
     padding: '22px 18px 0',
     margin: 0
+  },
+  dicaCarregando: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '13px',
+    color: '#8a8a92',
+    margin: 0
+  },
+  spinner: {
+    width: '13px',
+    height: '13px',
+    borderRadius: '50%',
+    border: '2px solid #ececec',
+    borderTopColor: '#e4002b',
+    animation: 'mersanGirar 0.7s linear infinite',
+    flexShrink: 0
   },
   carrossel: {
     display: 'flex',
