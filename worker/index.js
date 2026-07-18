@@ -883,3 +883,8 @@ async function handleCatalogoDebug(env) {
     diagnostico
   })
 }
+async function handleCatalogoForcar(env) {
+  await preAquecerCatalogoLote(env)
+  const bruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
+  return jsonResponse(bruto ? JSON.parse(bruto) : { produtos: [] }, 200)
+}
