@@ -832,9 +832,25 @@ async function preAquecerCatalogoAgendado(env) {
 async function handleCatalogoDebug(env) {
   const cursorBruto = await env.FOTOS.get(CATALOGO_CURSOR_CHAVE)
   const cacheBruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
-
   const listagem = await env.FOTOS.list({ limit: 200 })
   const codigos = listagem.keys
+const CATALOGO_CACHE_CHAVE = '_catalogo_pronto'
+const CATALOGO_CURSOR_CHAVE = '_catalogo_cursor'
+const CATALOGO_LOTE_TAMANHO = 20
+const CATALOGO_LOTE_PREFIXO = '_catalogo_lote_'
+
+async function preAquecerCatalogoLote(env) {
+  const listagem = await env.FOTOS.list({ limit: 200 })
+  const codigos = listagem.keys
+    .filter((k) => k.name !== VENDEDORES_CHAVE && !k.name.startsWith('_catalogo'))
+    .map((k) => ({ codigo: k.name, categoria: k.metadata?.categoria || '' }))
+
+  if (codigos.length === 0) {
+    await env.FOTOS.put(CATALOGO_CACHE_CHAVE, JSON.stringify({ totalLotes: 0, atualizadoEm: new Date().toISOString() }))
+    return
+  }
+
+  const totalLotes = Math.ceil(codigos.length / CATALOGO_LOTE_TAMANHO)
 const CATALOGO_CACHE_CHAVE = '_catalogo_pronto'
 const CATALOGO_CURSOR_CHAVE = '_catalogo_cursor'
 const CATALOGO_LOTE_TAMANHO = 20
@@ -917,51 +933,4 @@ async function handleCatalogoPronto(env, ctx) {
 
 async function preAquecerCatalogoAgendado(env) {
   await preAquecerCatalogoLote(env)
-}
-
-async function handleCatalogoDebug(env) {
-  const cursorBruto = await env.FOTOS.get(CATALOGO_CURSOR_CHAVE)
-  const indiceBruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
-
-  const listagem = await env.FOTOS.list({ limit: 200 })
-  const codigos = listagem.keys
-    .filter((k) => k.name !== VENDEDORES_CHAVE && !k.name.startsWith('_catalogo'))
-    .map((k) => k.name)
-
-  const totalLotes = Math.ceil(codigos.length / CATALOGO_LOTE_TAMANHO)
-  let indiceLote = cursorBruto ? parseInt(cursorBruto, 10) : 0
-  if (!Number.isFinite(indiceLote) || indiceLote >= totalLotes) indiceLote = 0
-
-  const inicio = indiceLote * CATALOGO_LOTE_TAMANHO
-  const lote = codigos.slice(inicio, inicio + CATALOGO_LOTE_TAMANHO)
-
-  const lotesGuardados = await Promise.all(
-    Array.from({ length: totalLotes }, (_, i) => env.FOTOS.get(`${CATALOGO_LOTE_PREFIXO}${i}`))
-  )
-
-  return jsonResponse({
-    cursorGuardado: cursorBruto,
-    indiceLoteUsado: indiceLote,
-    totalDeCodigos: codigos.length,
-    totalLotes,
-    loteQueSeriaProcessadoAgora: lote,
-    indiceGuardado: indiceBruto,
-    lotesGuardadosContagem: lotesGuardados.map((l, i) => ({
-      indice: i,
-      existe: Boolean(l),
-      qtdProdutos: l ? JSON.parse(l).length : 0
-    }))
-  })
-}
-
-async function handleCatalogoForcar(env) {
-  await preAquecerCatalogoLote(env)
-  const indiceBruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
-  if (!indiceBruto) return jsonResponse({ produtos: [] }, 200)
-  const { totalLotes } = JSON.parse(indiceBruto)
-  const lotes = await Promise.all(
-    Array.from({ length: totalLotes || 0 }, (_, i) => env.FOTOS.get(`${CATALOGO_LOTE_PREFIXO}${i}`))
-  )
-  const produtos = lotes.flatMap((l) => (l ? JSON.parse(l) : []))
-  return jsonResponse({ produtos }, 200)
 }
