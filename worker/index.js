@@ -820,11 +820,10 @@ async function preAquecerCatalogoLote(env) {
 
 async function handleCatalogoPronto(env, ctx) {
   const bruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
-  if (bruto) {
-    return jsonResponse(JSON.parse(bruto), 200, {
-      'Cache-Control': 'public, max-age=120'
-    })
-  }
+  return jsonResponse(bruto ? JSON.parse(bruto) : { produtos: [] }, 200, {
+    'Cache-Control': 'public, max-age=120'
+  })
+}
 
   await preAquecerCatalogoLote(env)
   const pronto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
