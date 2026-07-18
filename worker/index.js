@@ -14,7 +14,7 @@
 
 const MERSAN_BASE = 'https://credito.mersan.co/api/v1'
 const LOJA = 261
-const CACHE_TTL_SECONDS = 30 * 60
+const CACHE_TTL_SECONDS = 30 * 60 // 30 minutos, conforme briefing
 const PARCELA_MINIMA = 29.99
 const MAX_PARCELAS = 10
 
@@ -98,9 +98,14 @@ export default {
       return handleIrVendedor(request, url, env)
     }
 
+    // Qualquer outra rota: serve o site estático (React) normalmente.
     return env.ASSETS.fetch(request)
   },
 
+  // Roda sozinho a cada 25 minutos (configurado no wrangler.jsonc). Consulta
+  // a Mersan por conta própria pra todos os produtos cadastrados, deixando
+  // o cache sempre "quente" — assim, quase ninguém precisa esperar a
+  // consulta ao vivo pra Mersan, o catálogo abre rápido quase sempre.
   async scheduled(event, env, ctx) {
     ctx.waitUntil(preAquecerCache(env))
     ctx.waitUntil(preAquecerCatalogoAgendado(env))
@@ -138,11 +143,17 @@ async function preAquecerCache(env) {
           await cache.put(new Request(urlEstoque), respostaEstoque)
         }
       } catch {
+        // Um produto com erro não deve travar o aquecimento dos outros.
       }
     })
   )
 }
 
+// ---------- Produto / Estoque ----------
+
+// Busca e normaliza os dados de um produto na API da Mersan. Usada tanto
+// pelo endpoint JSON (/api/produto) quanto pela página do produto, que
+// precisa desses dados para montar as meta tags de compartilhamento.
 async function buscarDadosProdutoMersan(termo, signal) {
   const mersanUrl = `${MERSAN_BASE}/buscapreco/${encodeURIComponent(termo)}/${LOJA}`
 
@@ -164,6 +175,11 @@ async function buscarDadosProdutoMersan(termo, signal) {
 
   const item = lista.find((p) => p.cdEmpresa === LOJA) || lista[0]
 
+  // A matriz (empresa 1) cadastra promoções que valem pra todas as lojas,
+  // mas às vezes a linha específica da loja 261 ainda não reflete esse
+  // preço promocional (fica com vlPrecoPromocao zerado mesmo a promoção
+  // estando ativa). Nesses casos, usamos o preço promocional da matriz
+  // mesmo assim — o preço normal e todo o resto continuam vindo da 261.
   const itemMatriz = lista.find((p) => p.cdEmpresa === 1)
   let precoPromocao = item.vlPrecoPromocao
   if ((!precoPromocao || precoPromocao <= 0) && itemMatriz?.vlPrecoPromocao > 0) {
@@ -192,6 +208,8 @@ async function handleProduto(request, url, ctx) {
     return jsonResponse({ error: 'Parâmetro "termo" é obrigatório.' }, 400)
   }
 
+  // Modo de depuração temporário: mostra a resposta BRUTA da Mersan, sem
+  // nenhum filtro nosso, pra investigar divergência de preço promocional.
   if (url.searchParams.has('debug')) {
     const mersanUrl = `${MERSAN_BASE}/buscapreco/${encodeURIComponent(termo)}/${LOJA}`
     const resp = await fetch(mersanUrl, { headers: { Accept: 'application/json' } })
@@ -227,6 +245,11 @@ async function handleProduto(request, url, ctx) {
   return response
 }
 
+// Busca o estoque bruto da Mersan e já consolida por tamanho: se a mesma
+// numeração aparecer em mais de uma linha (comum na resposta da Mersan),
+// soma as quantidades e devolve só UM item por tamanho — o cliente nunca
+// vê duplicidade, e a quantidade somada só serve internamente pra saber
+// se aquele tamanho está disponível ou não.
 async function buscarEstoqueMersan(referencia, signal) {
   const mersanUrl = `${MERSAN_BASE}/buscapreco/estoque/${encodeURIComponent(referencia)}/${LOJA}`
 
@@ -295,9 +318,21 @@ async function handleEstoque(request, url, ctx) {
   return response
 }
 
+// ---------- Página do produto com Open Graph dinâmico (Etapa 4) ----------
+//
+// O WhatsApp (e Facebook, etc.) não executa JavaScript ao gerar a prévia de
+// um link — ele só lê o HTML bruto. Por isso, para a prévia mostrar a foto
+// e o nome certos de cada produto, o próprio servidor (aqui) precisa
+// devolver o HTML já com as meta tags corretas, antes do React assumir a
+// tela no navegador da pessoa.
+
 async function handleProdutoPage(request, url, env, ctx) {
   const codigo = decodeURIComponent(url.pathname.replace('/produto/', ''))
 
+  // Cache de 30 minutos por produto: sem isso, toda pessoa que abre a
+  // mesma página consultava a API da Mersan de novo, deixando o
+  // carregamento lento. Com o cache, só a primeira pessoa em cada janela
+  // de 30 minutos espera a consulta real.
   const cache = caches.default
   const cacheKey = new Request(url.toString(), request)
 
@@ -306,6 +341,8 @@ async function handleProdutoPage(request, url, env, ctx) {
     return cached
   }
 
+  // Pega o HTML base (o mesmo que o site inteiro usa) para depois trocar
+  // só as meta tags de compartilhamento.
   const baseRequest = new Request(new URL('/', request.url), request)
   const htmlResp = await env.ASSETS.fetch(baseRequest)
   let html = await htmlResp.text()
@@ -318,11 +355,20 @@ async function handleProdutoPage(request, url, env, ctx) {
   try {
     dadosProduto = await buscarDadosProdutoMersan(codigo)
   } catch {
+    // Sem dados: a página carrega normalmente e o React mostra o erro
+    // (ou "não encontrado") do lado do cliente. As meta tags ficam padrão.
     return new Response(html, htmlResp)
   }
 
   const titulo = `${dadosProduto.nome} - Mersan Calçados`
   const descricao = 'Mersan Calçados • Loja 261'
+  // Usa sempre o código da própria URL — é exatamente o mesmo código usado
+  // no cadastro da foto (a chave no KV). Usar o código de barras que a
+  // Mersan retorna aqui era o bug que fazia a prévia do WhatsApp falhar em
+  // alguns produtos: quando o admin cadastra pela referência (ou qualquer
+  // código diferente do "cdProduto" oficial), os dois divergiam e a busca
+  // da foto dava 404 nesse momento específico (o resto do site sempre
+  // funcionou, porque em todo outro lugar já se usa o código da URL).
   const chaveFoto = normalizarCodigo(codigo)
   const imagemUrl = `${url.origin}/produto-foto/${encodeURIComponent(chaveFoto)}`
 
@@ -366,10 +412,19 @@ function escapeHtml(str) {
     .replaceAll("'", '&#39;')
 }
 
+// ---------- Fotos (Etapa 3) ----------
+// Usando Workers KV em vez de R2: funciona no plano gratuito do Cloudflare
+// sem exigir cartão de crédito cadastrado. Limite gratuito: 1GB de
+// armazenamento e milhares de fotos (recomenda-se manter cada foto
+// comprimida/redimensionada antes do envio — o painel já faz isso sozinho).
+
 function normalizarCodigo(codigo) {
   return codigo.trim().replace(/\s+/g, '_')
 }
 
+// A referência que vem da Mersan às vezes traz o número do calçado colado
+// no final (ex: "001 145 8106-41"). Para o cliente, mostramos só a parte
+// fixa da referência, sem esse sufixo de tamanho.
 function referenciaParaCliente(referencia) {
   if (!referencia) return referencia
   return referencia.replace(/[-\s]\d{2,3}$/, '').trim()
@@ -388,7 +443,7 @@ async function handleServirFoto(url, env) {
   return new Response(resultado.value, {
     headers: {
       'Content-Type': resultado.metadata?.contentType || 'image/jpeg',
-      'Cache-Control': 'public, max-age=86400'
+      'Cache-Control': 'public, max-age=86400' // 1 dia
     }
   })
 }
@@ -422,6 +477,7 @@ async function handleAdminUploadFoto(request, env) {
   const chave = normalizarCodigo(codigo)
   const bytes = await arquivo.arrayBuffer()
 
+  // Limite de segurança: o KV aceita até 25MB por valor.
   if (bytes.byteLength > 24 * 1024 * 1024) {
     return jsonResponse({ error: 'Arquivo grande demais (máximo 24MB).' }, 400)
   }
@@ -437,6 +493,10 @@ async function handleAdminUploadFoto(request, env) {
   return jsonResponse({ ok: true, codigo: chave })
 }
 
+// Atualiza só categoria/promoção de uma foto já cadastrada, sem precisar
+// reenviar a imagem — o KV não permite trocar metadata sem "reescrever" o
+// valor, então lemos os bytes já salvos e gravamos de novo, mesma imagem,
+// metadata nova.
 async function handleAdminAtualizarFoto(request, env) {
   if (!autenticado(request, env)) {
     return jsonResponse({ error: 'Senha incorreta.' }, 401)
@@ -468,6 +528,10 @@ async function handleAdminAtualizarFoto(request, env) {
   return jsonResponse({ ok: true, codigo: chave })
 }
 
+// Muda o código/referência de uma foto já cadastrada, sem trocar a imagem.
+// Como o KV usa o código como chave, "renomear" aqui significa: ler os
+// bytes+metadata da chave antiga e regravar na chave nova, depois apagar
+// a antiga.
 async function handleAdminRenomearFoto(request, env) {
   if (!autenticado(request, env)) {
     return jsonResponse({ error: 'Senha incorreta.' }, 401)
@@ -541,6 +605,8 @@ async function handleAdminListarFotos(request, env) {
   return jsonResponse({ fotos, truncado: !listagem.list_complete })
 }
 
+// ---------- Vitrine pública (lista de fotos, sem senha) ----------
+
 async function handleFotosPublicas(env) {
   const listagem = await env.FOTOS.list({ limit: 200 })
   const produtos = listagem.keys
@@ -552,6 +618,10 @@ async function handleFotosPublicas(env) {
 
   return jsonResponse({ produtos, truncado: !listagem.list_complete })
 }
+
+// ---------- Vendedores ----------
+// Guardados como uma lista única em JSON dentro do mesmo KV das fotos,
+// numa chave reservada que nunca é usada como código de produto.
 
 const VENDEDORES_CHAVE = '_vendedores'
 
@@ -570,6 +640,7 @@ async function salvarVendedores(env, lista) {
   await env.FOTOS.put(VENDEDORES_CHAVE, JSON.stringify(lista))
 }
 
+// Lista pública: só nome e id, nunca o WhatsApp (fica só no servidor).
 async function handleVendedoresPublico(env) {
   const lista = await getVendedores(env)
   const publico = lista.map((v) => ({ id: v.id, nome: v.nome }))
@@ -591,7 +662,7 @@ async function handleAdminSalvarVendedor(request, env) {
 
   const corpo = await request.json().catch(() => null)
   const nome = corpo?.nome?.trim()
-  const whatsapp = corpo?.whatsapp?.replace(/\D/g, '')
+  const whatsapp = corpo?.whatsapp?.replace(/\D/g, '') // só dígitos
 
   if (!nome || !whatsapp) {
     return jsonResponse({ error: 'Envie "nome" e "whatsapp".' }, 400)
@@ -628,6 +699,10 @@ async function handleAdminExcluirVendedor(request, url, env) {
   return jsonResponse({ ok: true })
 }
 
+// Uma página HTML mínima com um botão manual. É o último degrau de
+// segurança: se por qualquer motivo o redirecionamento automático não
+// puder ser feito, a pessoa ainda assim vê algo clicável, nunca uma tela
+// genuinamente em branco.
 function paginaLinkManual(linkWhatsApp, mensagemTopo) {
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -651,6 +726,9 @@ function paginaLinkManual(linkWhatsApp, mensagemTopo) {
   })
 }
 
+// Monta a mensagem final e redireciona para o WhatsApp do vendedor
+// escolhido — o número de telefone nunca passa pelo navegador da pessoa,
+// só o link final do wa.me.
 async function handleIrVendedor(request, url, env) {
   const vendedorId = url.searchParams.get('vendedor')
   const codigo = url.searchParams.get('codigo')
@@ -665,4 +743,253 @@ async function handleIrVendedor(request, url, env) {
   const vendedor = lista.find((v) => v.id === vendedorId)
 
   if (!vendedor) {
-    return new Response('Vendedor não encontrado. Peça para recadastrar esse ve
+    return new Response('Vendedor não encontrado. Peça para recadastrar esse vendedor no painel admin.', { status: 404 })
+  }
+
+  // Valida o número ANTES de tentar montar qualquer link. Sem isso, um
+  // número salvo errado (vazio, com espaço, etc.) faz o Response.redirect
+  // quebrar mais na frente — e como o "plano B" de antes reusava esse
+  // mesmo número, ele quebrava de novo, gerando a tela em branco.
+  const numeroValido = /^\d{10,15}$/.test(vendedor.whatsapp || '')
+  if (!numeroValido) {
+    return new Response(
+      `O WhatsApp cadastrado para "${vendedor.nome}" está inválido ("${vendedor.whatsapp || 'vazio'}"). Corrija no painel admin (só números, com DDI e DDD, ex: 5511999999999).`,
+      { status: 500 }
+    )
+  }
+
+  // O "?v=" no final não afeta em nada a busca do produto (o código vem só
+  // do caminho da URL, antes do "?"), mas faz o WhatsApp tratar o link como
+  // "novo" a cada mensagem — sem isso, se esse produto específico já foi
+  // compartilhado uma vez com uma prévia quebrada (por exemplo, durante
+  // algum ajuste anterior), o WhatsApp guarda aquela prévia velha pra
+  // sempre e nunca busca a foto de novo, mesmo com o site já corrigido.
+  const linkProduto = `${url.origin}/produto/${encodeURIComponent(codigo)}?v=${Date.now()}`
+
+  let nomeProduto = codigo
+  let referencia = null
+  let cor = null
+  let preco = null
+  let precoOriginal = null
+  let emPromocao = false
+  try {
+    const controlador = new AbortController()
+    const tempoLimite = setTimeout(() => controlador.abort(), 4000)
+    const dados = await buscarDadosProdutoMersan(codigo, controlador.signal)
+    clearTimeout(tempoLimite)
+    nomeProduto = dados.nome
+    referencia = dados.referencia
+    cor = dados.cor
+    preco = dados.preco
+    precoOriginal = dados.precoOriginal
+    emPromocao = dados.emPromocao
+  } catch {
+    // Sem dados do produto (demorou, ou deu erro): segue só com o código.
+  }
+
+  const linhas = [
+    'Olá!',
+    'Tenho interesse neste produto da Mersan Calçados.',
+    `Produto: ${nomeProduto}`
+  ]
+
+  if (referencia) linhas.push(`Referência: ${referenciaParaCliente(referencia)}`)
+  if (cor) linhas.push(`Cor: ${cor}`)
+  if (tamanho) linhas.push(`Tamanho: ${tamanho}`)
+
+  if (preco != null) {
+    if (emPromocao && precoOriginal > preco) {
+      linhas.push(`De: R$ ${precoOriginal.toFixed(2).replace('.', ',')}`)
+      linhas.push(`Por: R$ ${preco.toFixed(2).replace('.', ',')}`)
+    } else {
+      linhas.push(`Valor: R$ ${preco.toFixed(2).replace('.', ',')}`)
+    }
+
+    const maxParcelas = Math.min(MAX_PARCELAS, Math.max(1, Math.floor(preco / PARCELA_MINIMA)))
+    // Prioriza o que o cliente escolheu no dropdown; se por algum motivo
+    // não vier (link antigo, por exemplo), cai no cálculo automático.
+    const parcelasFinal =
+      parcelasEscolhidas && parcelasEscolhidas >= 1 && parcelasEscolhidas <= maxParcelas
+        ? parcelasEscolhidas
+        : maxParcelas
+    if (parcelasFinal > 1) {
+      const valorParcela = (preco / parcelasFinal).toFixed(2).replace('.', ',')
+      linhas.push(`Parcelamento: ${parcelasFinal}x de R$ ${valorParcela}`)
+    }
+  }
+
+  linhas.push(`Link: ${linkProduto}`)
+  linhas.push('')
+  linhas.push('Gostaria de mais informações.')
+
+  const mensagem = linhas.join('\n')
+  const linkWhatsApp = `https://wa.me/${vendedor.whatsapp}?text=${encodeURIComponent(mensagem)}`
+
+  // A partir daqui o número já foi validado e a mensagem já foi codificada
+  // corretamente, então Response.redirect não deveria falhar. Ainda assim,
+  // qualquer erro cai na página com botão manual — nunca em branco.
+  try {
+    return Response.redirect(linkWhatsApp, 302)
+  } catch {
+    return paginaLinkManual(linkWhatsApp, `Toque no botão abaixo para falar com ${vendedor.nome}:`)
+  }
+}
+
+// ---------- Utilitário ----------
+
+function jsonResponse(data, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      ...extraHeaders
+    }
+  })
+}
+
+// ---------- Catálogo pronto (performance) ----------
+//
+// Em vez do catálogo perguntar produto por produto pra Mersan toda vez
+// que alguém abre a página (lento), essa função monta a lista JÁ PRONTA
+// de uma vez e guarda no Cache API por 30 minutos. A primeira pessoa
+// depois desses 30 minutos "paga" a espera da consulta; todo mundo
+// depois disso recebe a lista pronta na hora.
+
+const CATALOGO_CACHE_CHAVE = '_catalogo_pronto'
+const CATALOGO_CURSOR_CHAVE = '_catalogo_cursor'
+const CATALOGO_LOTE_TAMANHO = 20
+const CATALOGO_LOTE_PREFIXO = '_catalogo_lote_'
+
+// Cada lote escreve numa chave PRÓPRIA (_catalogo_lote_0, _catalogo_lote_1,
+// ...), nunca lendo nem misturando com o que já existia. Isso elimina de
+// vez o problema de duas execuções (o aquecedor automático e um teste
+// manual, por exemplo) se atropelarem: cada uma mexe só na sua própria
+// gaveta, nunca na do outro.
+async function preAquecerCatalogoLote(env) {
+  const listagem = await env.FOTOS.list({ limit: 200 })
+  const codigos = listagem.keys
+    .filter((k) => k.name !== VENDEDORES_CHAVE && !k.name.startsWith('_catalogo'))
+    .map((k) => ({ codigo: k.name, categoria: k.metadata?.categoria || '' }))
+
+  if (codigos.length === 0) {
+    await env.FOTOS.put(CATALOGO_CACHE_CHAVE, JSON.stringify({ totalLotes: 0, atualizadoEm: new Date().toISOString() }))
+    return
+  }
+
+  const totalLotes = Math.ceil(codigos.length / CATALOGO_LOTE_TAMANHO)
+
+  const cursorBruto = await env.FOTOS.get(CATALOGO_CURSOR_CHAVE)
+  let indiceLote = cursorBruto ? parseInt(cursorBruto, 10) : 0
+  if (!Number.isFinite(indiceLote) || indiceLote >= totalLotes) indiceLote = 0
+
+  const inicio = indiceLote * CATALOGO_LOTE_TAMANHO
+  const lote = codigos.slice(inicio, inicio + CATALOGO_LOTE_TAMANHO)
+
+  const resultados = await Promise.all(
+    lote.map(async (item) => {
+      try {
+        const dados = await buscarDadosProdutoMersan(item.codigo)
+        if (!dados.referencia || dados.referencia.includes('não encontrado')) return null
+
+        const estoque = await buscarEstoqueMersan(dados.referencia)
+        if (!estoque.length) return null
+
+        return {
+          codigo: item.codigo,
+          categoria: item.categoria,
+          promocao: dados.emPromocao,
+          nome: dados.nome,
+          preco: dados.preco,
+          precoOriginal: dados.precoOriginal
+        }
+      } catch {
+        return null
+      }
+    })
+  )
+
+  await env.FOTOS.put(`${CATALOGO_LOTE_PREFIXO}${indiceLote}`, JSON.stringify(resultados.filter(Boolean)))
+  await env.FOTOS.put(
+    CATALOGO_CACHE_CHAVE,
+    JSON.stringify({ totalLotes, atualizadoEm: new Date().toISOString() })
+  )
+
+  const proximoIndice = indiceLote + 1 >= totalLotes ? 0 : indiceLote + 1
+  await env.FOTOS.put(CATALOGO_CURSOR_CHAVE, String(proximoIndice))
+}
+
+// Só LÊ — nunca recalcula, nunca escreve. Junta os lotes já prontos (cada
+// um guardado na própria gaveta) numa lista só, pra devolver pro cliente.
+async function handleCatalogoPronto(env, ctx) {
+  const indiceBruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
+  if (!indiceBruto) {
+    return jsonResponse({ produtos: [] }, 200)
+  }
+
+  const { totalLotes } = JSON.parse(indiceBruto)
+  if (!totalLotes) {
+    return jsonResponse({ produtos: [] }, 200)
+  }
+
+  const lotes = await Promise.all(
+    Array.from({ length: totalLotes }, (_, i) => env.FOTOS.get(`${CATALOGO_LOTE_PREFIXO}${i}`))
+  )
+
+  const produtos = lotes.flatMap((l) => (l ? JSON.parse(l) : []))
+
+  return jsonResponse({ produtos }, 200, {
+    'Cache-Control': 'public, max-age=120'
+  })
+}
+
+async function preAquecerCatalogoAgendado(env) {
+  await preAquecerCatalogoLote(env)
+}
+
+async function handleCatalogoDebug(env) {
+  const cursorBruto = await env.FOTOS.get(CATALOGO_CURSOR_CHAVE)
+  const indiceBruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
+
+  const listagem = await env.FOTOS.list({ limit: 200 })
+  const codigos = listagem.keys
+    .filter((k) => k.name !== VENDEDORES_CHAVE && !k.name.startsWith('_catalogo'))
+    .map((k) => k.name)
+
+  const totalLotes = Math.ceil(codigos.length / CATALOGO_LOTE_TAMANHO)
+  let indiceLote = cursorBruto ? parseInt(cursorBruto, 10) : 0
+  if (!Number.isFinite(indiceLote) || indiceLote >= totalLotes) indiceLote = 0
+
+  const inicio = indiceLote * CATALOGO_LOTE_TAMANHO
+  const lote = codigos.slice(inicio, inicio + CATALOGO_LOTE_TAMANHO)
+
+  const lotesGuardados = await Promise.all(
+    Array.from({ length: totalLotes }, (_, i) => env.FOTOS.get(`${CATALOGO_LOTE_PREFIXO}${i}`))
+  )
+
+  return jsonResponse({
+    cursorGuardado: cursorBruto,
+    indiceLoteUsado: indiceLote,
+    totalDeCodigos: codigos.length,
+    totalLotes,
+    loteQueSeriaProcessadoAgora: lote,
+    indiceGuardado: indiceBruto,
+    lotesGuardadosContagem: lotesGuardados.map((l, i) => ({
+      indice: i,
+      existe: Boolean(l),
+      qtdProdutos: l ? JSON.parse(l).length : 0
+    }))
+  })
+}
+
+async function handleCatalogoForcar(env) {
+  await preAquecerCatalogoLote(env)
+  const indiceBruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
+  if (!indiceBruto) return jsonResponse({ produtos: [] }, 200)
+  const { totalLotes } = JSON.parse(indiceBruto)
+  const lotes = await Promise.all(
+    Array.from({ length: totalLotes || 0 }, (_, i) => env.FOTOS.get(`${CATALOGO_LOTE_PREFIXO}${i}`))
+  )
+  const produtos = lotes.flatMap((l) => (l ? JSON.parse(l) : []))
+  return jsonResponse({ produtos }, 200)
+}
