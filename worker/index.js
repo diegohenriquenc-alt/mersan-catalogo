@@ -880,36 +880,4 @@ async function handleCatalogoDebug(env) {
     diagnostico
   })
 }
-  const listagem = await env.FOTOS.list({ limit: 200 })
-  const codigos = listagem.keys
-    .filter(
-      (k) =>
-        k.name !== VENDEDORES_CHAVE &&
-        k.name !== CATALOGO_CACHE_CHAVE &&
-        k.name !== CATALOGO_CURSOR_CHAVE
-    )
-    .map((k) => k.name)
-
-  const amostra = codigos.slice(0, 5)
-  const diagnostico = await Promise.all(
-    amostra.map(async (codigo) => {
-      try {
-        const dados = await buscarDadosProdutoMersan(codigo)
-        if (!dados.referencia) {
-          return { codigo, problema: 'sem referencia', dados }
-        }
-        const estoque = await buscarEstoqueMersan(dados.referencia)
-        return {
-          codigo,
-          referencia: dados.referencia,
-          preco: dados.preco,
-          tamanhosEmEstoque: estoque.length
-        }
-      } catch (e) {
-        return { codigo, erro: String(e && e.message ? e.message : e) }
-      }
-    })
-  )
-
-  return jsonResponse({ totalDeCodigos: codigos.length, primeirosCincoCodigos: amostra, diagnostico })
-}
+  
