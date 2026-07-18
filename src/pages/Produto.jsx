@@ -6,8 +6,39 @@ const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
 const MAX_PARCELAS = 10
 
+const PALAVRAS_NAO_MARCA = new Set([
+  'CASUAL', 'CORRIDA', 'ESPORTIVO', 'CONFORTO', 'SOCIAL', 'INFANTIL'
+])
+
+function extrairMarca(nome) {
+  if (!nome) return null
+  const palavras = nome.trim().split(/\s+/)
+  if (palavras.length < 2) return null
+  const candidata = palavras[1]?.toUpperCase()
+  if (candidata && !PALAVRAS_NAO_MARCA.has(candidata) && !/^\d/.test(candidata)) {
+    return candidata
+  }
+  if (palavras.length >= 3) return palavras[2]?.toUpperCase() || null
+  return null
+}
+
+function limparNome(nome, tamanho) {
+  if (!nome) return ''
+  if (!tamanho) return nome
+  const semTamanho = nome.replace(new RegExp(`\\s+${tamanho}\\.?$`), '')
+  return semTamanho || nome
+}
+
 function formatarPreco(preco) {
   return preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+function calcularParcelamento(preco) {
+  if (preco == null) return null
+  const max = Math.min(MAX_PARCELAS, Math.max(1, Math.floor(preco / PARCELA_MINIMA)))
+  if (max <= 1) return null
+  const valor = (preco / max).toFixed(2).replace('.', ',')
+  return `em até ${max}x de R$ ${valor}`
 }
 
 export default function Produto() {
@@ -22,6 +53,8 @@ export default function Produto() {
   const [parcelasEscolhidas, setParcelasEscolhidas] = useState('')
   const [vendedorEscolhido, setVendedorEscolhido] = useState(null)
 
+  const [relacionados, setRelacionados] = useState([])
+
   useEffect(() => {
     let cancelado = false
 
@@ -31,6 +64,7 @@ export default function Produto() {
     setTamanhoEscolhido(null)
     setParcelasEscolhidas('')
     setVendedorEscolhido(null)
+    window.scrollTo({ top: 0 })
 
     ApiService.buscarProduto(codigo)
       .then((data) => {
@@ -61,6 +95,33 @@ export default function Produto() {
     }
   }, [])
 
+  // "Você também pode gostar": usa a mesma lista já pronta e rápida do
+  // catálogo (sem nenhuma consulta nova à Mersan), filtrando pela mesma
+  // categoria. A categoria só existe nessa lista (não vem da API da
+  // Mersan), então achamos o produto atual dentro dela pra saber a
+  // categoria dele. Se não tiver categoria definida (ainda é manual
+  // hoje), cai num "mais produtos" genérico em vez de ficar vazio.
+  useEffect(() => {
+    let cancelado = false
+    fetch(`/api/catalogo?t=${Date.now()}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelado) return
+        const todosProdutos = data.produtos || []
+        const atual = todosProdutos.find((p) => p.codigo === codigo)
+        const todos = todosProdutos.filter((p) => p.codigo !== codigo)
+        const mesmaCategoria = atual?.categoria
+          ? todos.filter((p) => p.categoria === atual.categoria)
+          : []
+        const lista = (mesmaCategoria.length > 0 ? mesmaCategoria : todos).slice(0, 10)
+        setRelacionados(lista)
+      })
+      .catch(() => {})
+    return () => {
+      cancelado = true
+    }
+  }, [codigo])
+
   const maxParcelas = produto?.preco
     ? Math.min(MAX_PARCELAS, Math.max(1, Math.floor(produto.preco / PARCELA_MINIMA)))
     : 1
@@ -76,11 +137,15 @@ export default function Produto() {
       }).toString()
     : ''
 
+  const marca = produto ? extrairMarca(produto.nome) : null
+  const nomeExibido = produto ? limparNome(produto.nome, produto.tamanho) : ''
+
   return (
     <main style={styles.pagina}>
       <div style={styles.topo}>
         <Link to="/" style={styles.voltar}>
-          ← Voltar ao catálogo
+          <IconeVoltar />
+          Catálogo
         </Link>
       </div>
 
@@ -103,7 +168,8 @@ export default function Produto() {
           </div>
 
           <div style={styles.info}>
-            <h1 style={styles.nome}>{produto.nome}</h1>
+            {marca && <span style={styles.marcaEtiqueta}>{marca}</span>}
+            <h1 style={styles.nome}>{nomeExibido}</h1>
 
             <div style={styles.precoLinha}>
               {produto.emPromocao && produto.precoOriginal > produto.preco && (
@@ -114,14 +180,14 @@ export default function Produto() {
 
             {produto.preco != null && maxParcelas > 1 && (
               <p style={styles.parcelamento}>
-                em até {maxParcelas}x de R$ {(produto.preco / maxParcelas).toFixed(2).replace('.', ',')} sem juros
+                {calcularParcelamento(produto.preco)} sem juros
               </p>
             )}
           </div>
 
           {produto.estoque?.length > 0 && (
             <div style={styles.secao}>
-              <h2 style={styles.secaoTitulo}>1. Escolha o tamanho</h2>
+              <h2 style={styles.secaoTitulo}>Escolha o tamanho</h2>
               <div style={styles.opcoes}>
                 {produto.estoque.map((item) => (
                   <button
@@ -142,7 +208,7 @@ export default function Produto() {
 
           {tamanhoEscolhido && produto.preco != null && (
             <div style={styles.secao}>
-              <h2 style={styles.secaoTitulo}>2. Escolha o parcelamento</h2>
+              <h2 style={styles.secaoTitulo}>Parcelamento</h2>
               <select
                 value={parcelasEscolhidas}
                 onChange={(e) => setParcelasEscolhidas(Number(e.target.value))}
@@ -164,7 +230,7 @@ export default function Produto() {
 
           {tamanhoEscolhido && parcelasEscolhidas && vendedores.length > 0 && (
             <div style={styles.secao}>
-              <h2 style={styles.secaoTitulo}>3. Escolha o vendedor</h2>
+              <h2 style={styles.secaoTitulo}>Escolha o vendedor</h2>
               <div style={styles.opcoes}>
                 {vendedores.map((v) => (
                   <button
@@ -183,10 +249,40 @@ export default function Produto() {
             <p style={styles.dica}>Nenhum vendedor cadastrado ainda.</p>
           )}
 
+          {relacionados.length > 0 && (
+            <div style={styles.secaoRelacionados}>
+              <h2 style={styles.secaoTitulo}>Você também pode gostar</h2>
+              <div style={styles.carrossel}>
+                {relacionados.map((p) => (
+                  <Link
+                    key={p.codigo}
+                    to={`/produto/${encodeURIComponent(p.codigo)}`}
+                    style={styles.miniCard}
+                  >
+                    <div style={styles.miniFotoWrapper}>
+                      <img
+                        src={`/produto-foto/${encodeURIComponent(p.codigo)}`}
+                        alt={p.nome}
+                        loading="lazy"
+                        style={styles.miniFoto}
+                        onError={(e) => {
+                          e.currentTarget.src = IMAGEM_PADRAO
+                        }}
+                      />
+                    </div>
+                    <span style={styles.miniNome}>{p.nome}</span>
+                    {p.preco != null && <span style={styles.miniPreco}>{formatarPreco(p.preco)}</span>}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div style={styles.rodape}>
             {linkPedidoPronto ? (
               <a href={`/ir-vendedor?${paramsPedido}`} style={styles.botaoWhatsApp}>
-                Falar com o vendedor no WhatsApp
+                <IconeWhatsApp />
+                FALAR COM O VENDEDOR
               </a>
             ) : (
               <button disabled style={styles.botaoWhatsAppDesabilitado}>
@@ -206,37 +302,58 @@ export default function Produto() {
   )
 }
 
+function IconeVoltar() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <path d="M15 18l-6-6 6-6" stroke="#14141a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function IconeWhatsApp() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
+      <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.46 1.33 4.96L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2Zm5.8 14.06c-.24.68-1.4 1.33-1.93 1.4-.5.07-1.03.29-3.46-.72-2.92-1.21-4.8-4.17-4.94-4.36-.14-.19-1.18-1.57-1.18-3 0-1.42.75-2.12 1.01-2.41.27-.29.58-.36.77-.36.19 0 .39 0 .55.01.18.01.42-.07.65.5.24.58.82 2.01.89 2.16.07.14.12.31.02.5-.1.19-.15.31-.29.48-.15.17-.31.38-.44.51-.15.15-.3.31-.13.6.17.29.75 1.24 1.62 2.01 1.11.99 2.05 1.3 2.34 1.44.29.15.46.13.63-.08.17-.2.72-.84.92-1.13.19-.29.38-.24.63-.14.26.1 1.65.78 1.93.92.29.14.48.22.55.34.07.13.07.7-.17 1.38Z" />
+    </svg>
+  )
+}
+
 const styles = {
   pagina: {
     minHeight: '100dvh',
     background: '#ffffff',
-    paddingBottom: '100px'
+    paddingBottom: '104px',
+    fontFamily:
+      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
   },
   topo: {
     position: 'sticky',
     top: 0,
     zIndex: 5,
     background: '#ffffff',
-    borderBottom: '1px solid #eeeeee',
-    padding: '12px 14px'
+    boxShadow: '0 1px 0 rgba(20,20,26,0.06)',
+    padding: '14px 16px'
   },
   voltar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
     fontSize: '14px',
-    fontWeight: 600,
-    color: '#111111',
+    fontWeight: 700,
+    color: '#14141a',
     textDecoration: 'none'
   },
   status: {
     fontSize: '14px',
-    color: '#6b6b6b',
+    color: '#8a8a92',
     textAlign: 'center',
-    padding: '30px 0'
+    padding: '32px 0'
   },
   erro: {
-    color: '#d92d20',
+    color: '#e4002b',
     fontSize: '14px',
     textAlign: 'center',
-    padding: '30px 14px'
+    padding: '32px 16px'
   },
   conteudo: {
     display: 'flex',
@@ -246,7 +363,7 @@ const styles = {
     position: 'relative',
     width: '100%',
     aspectRatio: '1 / 1',
-    background: '#fafafa'
+    background: '#ffffff'
   },
   foto: {
     width: '100%',
@@ -255,52 +372,69 @@ const styles = {
   },
   selo: {
     position: 'absolute',
-    top: '14px',
-    left: '14px',
-    background: '#d92d20',
+    top: '16px',
+    left: '16px',
+    background: '#e4002b',
     color: '#ffffff',
     fontSize: '12px',
     fontWeight: 800,
-    letterSpacing: '0.03em',
-    padding: '5px 10px',
+    letterSpacing: '0.04em',
+    padding: '6px 12px',
     borderRadius: '999px'
   },
   info: {
-    padding: '18px 16px 8px'
+    padding: '20px 18px 8px'
+  },
+  marcaEtiqueta: {
+    display: 'block',
+    fontSize: '11px',
+    fontWeight: 800,
+    letterSpacing: '0.1em',
+    color: '#8a8a92',
+    marginBottom: '4px'
   },
   nome: {
-    fontSize: '19px',
-    fontWeight: 700,
-    margin: '0 0 10px'
+    fontSize: '20px',
+    fontWeight: 800,
+    lineHeight: 1.3,
+    margin: '0 0 12px',
+    color: '#14141a'
   },
   precoLinha: {
     display: 'flex',
     alignItems: 'baseline',
-    gap: '10px',
+    gap: '12px',
     flexWrap: 'wrap'
   },
   precoOriginal: {
-    fontSize: '15px',
-    color: '#9a9a9a',
+    fontSize: '16px',
+    color: '#b3b3ba',
     textDecoration: 'line-through'
   },
   preco: {
-    fontSize: '26px',
-    fontWeight: 800,
-    color: '#111111'
+    fontSize: '32px',
+    fontWeight: 900,
+    color: '#14141a',
+    letterSpacing: '-0.01em'
   },
   parcelamento: {
-    fontSize: '13px',
-    color: '#6b6b6b',
-    margin: '4px 0 0'
+    fontSize: '14px',
+    color: '#8a8a92',
+    fontWeight: 600,
+    margin: '6px 0 0'
   },
   secao: {
-    padding: '18px 16px 0'
+    padding: '22px 18px 0'
+  },
+  secaoRelacionados: {
+    padding: '28px 0 0'
   },
   secaoTitulo: {
-    fontSize: '14px',
-    fontWeight: 700,
-    margin: '0 0 10px'
+    fontSize: '15px',
+    fontWeight: 800,
+    margin: '0 0 12px',
+    color: '#14141a',
+    padding: '0 18px'
   },
   opcoes: {
     display: 'flex',
@@ -308,43 +442,85 @@ const styles = {
     gap: '10px'
   },
   opcao: {
-    minWidth: '52px',
-    padding: '12px 16px',
+    minWidth: '54px',
+    padding: '13px 16px',
     fontSize: '14px',
-    fontWeight: 600,
-    color: '#111111',
-    background: '#f2f2f2',
-    border: '1px solid #e6e6e6',
+    fontWeight: 700,
+    color: '#14141a',
+    background: '#f7f7f8',
+    border: '1px solid #ececec',
     borderRadius: '999px',
     cursor: 'pointer'
   },
   opcaoSelecionada: {
-    minWidth: '52px',
-    padding: '12px 16px',
+    minWidth: '54px',
+    padding: '13px 16px',
     fontSize: '14px',
-    fontWeight: 700,
+    fontWeight: 800,
     color: '#ffffff',
-    background: '#111111',
-    border: '1px solid #111111',
+    background: '#14141a',
+    border: '1px solid #14141a',
     borderRadius: '999px',
     cursor: 'pointer'
   },
   selectParcelamento: {
     width: '100%',
-    padding: '14px 16px',
+    padding: '15px 16px',
     fontSize: '15px',
     fontWeight: 600,
-    color: '#111111',
-    background: '#f2f2f2',
-    border: '1px solid #e6e6e6',
-    borderRadius: '12px',
+    color: '#14141a',
+    background: '#f7f7f8',
+    border: '1px solid #ececec',
+    borderRadius: '14px',
     appearance: 'auto'
   },
   dica: {
     fontSize: '13px',
-    color: '#6b6b6b',
-    padding: '18px 16px 0',
+    color: '#8a8a92',
+    padding: '22px 18px 0',
     margin: 0
+  },
+  carrossel: {
+    display: 'flex',
+    gap: '12px',
+    overflowX: 'auto',
+    padding: '0 18px 4px',
+    WebkitOverflowScrolling: 'touch'
+  },
+  miniCard: {
+    flexShrink: 0,
+    width: '128px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    textDecoration: 'none',
+    color: '#14141a'
+  },
+  miniFotoWrapper: {
+    width: '128px',
+    height: '128px',
+    borderRadius: '14px',
+    background: '#f7f7f8',
+    overflow: 'hidden'
+  },
+  miniFoto: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'contain'
+  },
+  miniNome: {
+    fontSize: '12px',
+    fontWeight: 600,
+    lineHeight: 1.3,
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden'
+  },
+  miniPreco: {
+    fontSize: '13px',
+    fontWeight: 800,
+    color: '#14141a'
   },
   rodape: {
     position: 'fixed',
@@ -352,16 +528,20 @@ const styles = {
     right: 0,
     bottom: 0,
     background: '#ffffff',
-    borderTop: '1px solid #eeeeee',
-    padding: '12px 16px',
+    boxShadow: '0 -2px 12px rgba(20,20,26,0.08)',
+    padding: '14px 16px',
     zIndex: 10
   },
   botaoWhatsApp: {
-    display: 'block',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '10px',
     textAlign: 'center',
-    padding: '16px',
+    padding: '17px',
     fontSize: '16px',
     fontWeight: 800,
+    letterSpacing: '0.01em',
     color: '#ffffff',
     background: '#25D366',
     borderRadius: '999px',
@@ -371,13 +551,13 @@ const styles = {
     display: 'block',
     width: '100%',
     textAlign: 'center',
-    padding: '16px',
+    padding: '17px',
     fontSize: '16px',
     fontWeight: 800,
-    color: '#9a9a9a',
-    background: '#e6e6e6',
+    color: '#b3b3ba',
+    background: '#f0f0f1',
     border: 'none',
     borderRadius: '999px',
     cursor: 'not-allowed'
   }
-              }
+}
