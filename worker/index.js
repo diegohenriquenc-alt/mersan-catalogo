@@ -66,16 +66,16 @@ export default {
       return handleFotosPublicas(env)
     }
 
+    if (url.pathname === '/api/catalogo' && request.method === 'GET') {
+      return handleCatalogoPronto(env, ctx)
+    }
+
     if (url.pathname === '/api/catalogo-debug' && request.method === 'GET') {
       return handleCatalogoDebug(env)
     }
 
     if (url.pathname === '/api/catalogo-forcar' && request.method === 'GET') {
       return handleCatalogoForcar(env)
-    }
-
-    if (url.pathname === '/api/catalogo-debug' && request.method === 'GET') {
-      return handleCatalogoDebug(env)
     }
 
     if (url.pathname === '/api/vendedores' && request.method === 'GET') {
@@ -252,7 +252,8 @@ async function buscarEstoqueMersan(referencia, signal) {
   return Array.from(porTamanho.entries())
     .map(([tamanho, pares]) => ({ tamanho, pares }))
     .sort((a, b) => parseFloat(a.tamanho) - parseFloat(b.tamanho))
-    }
+}
+
 async function handleEstoque(request, url, ctx) {
   const referencia = url.searchParams.get('referencia')
 
@@ -434,7 +435,8 @@ async function handleAdminUploadFoto(request, env) {
   })
 
   return jsonResponse({ ok: true, codigo: chave })
-      }
+}
+
 async function handleAdminAtualizarFoto(request, env) {
   if (!autenticado(request, env)) {
     return jsonResponse({ error: 'Senha incorreta.' }, 401)
@@ -625,6 +627,7 @@ async function handleAdminExcluirVendedor(request, url, env) {
   await salvarVendedores(env, nova)
   return jsonResponse({ ok: true })
 }
+
 function paginaLinkManual(linkWhatsApp, mensagemTopo) {
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -662,275 +665,4 @@ async function handleIrVendedor(request, url, env) {
   const vendedor = lista.find((v) => v.id === vendedorId)
 
   if (!vendedor) {
-    return new Response('Vendedor não encontrado. Peça para recadastrar esse vendedor no painel admin.', { status: 404 })
-  }
-
-  const numeroValido = /^\d{10,15}$/.test(vendedor.whatsapp || '')
-  if (!numeroValido) {
-    return new Response(
-      `O WhatsApp cadastrado para "${vendedor.nome}" está inválido ("${vendedor.whatsapp || 'vazio'}"). Corrija no painel admin (só números, com DDI e DDD, ex: 5511999999999).`,
-      { status: 500 }
-    )
-  }
-
-  const linkProduto = `${url.origin}/produto/${encodeURIComponent(codigo)}?v=${Date.now()}`
-
-  let nomeProduto = codigo
-  let referencia = null
-  let cor = null
-  let preco = null
-  let precoOriginal = null
-  let emPromocao = false
-  try {
-    const controlador = new AbortController()
-    const tempoLimite = setTimeout(() => controlador.abort(), 4000)
-    const dados = await buscarDadosProdutoMersan(codigo, controlador.signal)
-    clearTimeout(tempoLimite)
-    nomeProduto = dados.nome
-    referencia = dados.referencia
-    cor = dados.cor
-    preco = dados.preco
-    precoOriginal = dados.precoOriginal
-    emPromocao = dados.emPromocao
-  } catch {
-  }
-
-  const linhas = [
-    'Olá!',
-    'Tenho interesse neste produto da Mersan Calçados.',
-    `Produto: ${nomeProduto}`
-  ]
-
-  if (referencia) linhas.push(`Referência: ${referenciaParaCliente(referencia)}`)
-  if (cor) linhas.push(`Cor: ${cor}`)
-  if (tamanho) linhas.push(`Tamanho: ${tamanho}`)
-
-  if (preco != null) {
-    if (emPromocao && precoOriginal > preco) {
-      linhas.push(`De: R$ ${precoOriginal.toFixed(2).replace('.', ',')}`)
-      linhas.push(`Por: R$ ${preco.toFixed(2).replace('.', ',')}`)
-    } else {
-      linhas.push(`Valor: R$ ${preco.toFixed(2).replace('.', ',')}`)
-    }
-
-    const maxParcelas = Math.min(MAX_PARCELAS, Math.max(1, Math.floor(preco / PARCELA_MINIMA)))
-    const parcelasFinal =
-      parcelasEscolhidas && parcelasEscolhidas >= 1 && parcelasEscolhidas <= maxParcelas
-        ? parcelasEscolhidas
-        : maxParcelas
-    if (parcelasFinal > 1) {
-      const valorParcela = (preco / parcelasFinal).toFixed(2).replace('.', ',')
-      linhas.push(`Parcelamento: ${parcelasFinal}x de R$ ${valorParcela}`)
-    }
-  }
-
-  linhas.push(`Link: ${linkProduto}`)
-  linhas.push('')
-  linhas.push('Gostaria de mais informações.')
-
-  const mensagem = linhas.join('\n')
-  const linkWhatsApp = `https://wa.me/${vendedor.whatsapp}?text=${encodeURIComponent(mensagem)}`
-
-  try {
-    return Response.redirect(linkWhatsApp, 302)
-  } catch {
-    return paginaLinkManual(linkWhatsApp, `Toque no botão abaixo para falar com ${vendedor.nome}:`)
-  }
-}
-
-function jsonResponse(data, status = 200, extraHeaders = {}) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      ...extraHeaders
-    }
-  })
-}
-const CATALOGO_CACHE_CHAVE = '_catalogo_pronto'
-const CATALOGO_CURSOR_CHAVE = '_catalogo_cursor'
-const CATALOGO_LOTE_TAMANHO = 20
-async function preAquecerCatalogoLote(env) {
-  const listagem = await env.FOTOS.list({ limit: 200 })
-  const codigos = listagem.keys
-    .filter(
-      (k) =>
-        k.name !== VENDEDORES_CHAVE &&
-        k.name !== CATALOGO_CACHE_CHAVE &&
-        k.name !== CATALOGO_CURSOR_CHAVE
-    )
-    .map((k) => ({ codigo: k.name, categoria: k.metadata?.categoria || '' }))
-
-  if (codigos.length === 0) {
-    await env.FOTOS.put(CATALOGO_CACHE_CHAVE, JSON.stringify({ produtos: [], atualizadoEm: new Date().toISOString() }))
-    return
-  }
-
-  const cursorBruto = await env.FOTOS.get(CATALOGO_CURSOR_CHAVE)
-  let cursor = cursorBruto ? parseInt(cursorBruto, 10) : 0
-  if (!Number.isFinite(cursor) || cursor >= codigos.length) cursor = 0
-
-  const lote = codigos.slice(cursor, cursor + CATALOGO_LOTE_TAMANHO)
-
-  const resultados = await Promise.all(
-    lote.map(async (item) => {
-      try {
-        const dados = await buscarDadosProdutoMersan(item.codigo)
-        if (!dados.referencia) return null
-
-        const estoque = await buscarEstoqueMersan(dados.referencia)
-        if (!estoque.length) return null
-
-        return {
-          codigo: item.codigo,
-          categoria: item.categoria,
-          promocao: dados.emPromocao,
-          nome: dados.nome,
-          preco: dados.preco,
-          precoOriginal: dados.precoOriginal
-        }
-      } catch {
-        return null
-      }
-    })
-  )
-
-  const anteriorBruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
-  const anterior = anteriorBruto ? JSON.parse(anteriorBruto).produtos : []
-  const mapa = new Map(anterior.map((p) => [p.codigo, p]))
-
-  lote.forEach((item, i) => {
-    const resultado = resultados[i]
-    if (resultado) {
-      mapa.set(item.codigo, resultado)
-    } else {
-      mapa.delete(item.codigo)
-    }
-  })
-
-  const proximoCursor = cursor + CATALOGO_LOTE_TAMANHO >= codigos.length ? 0 : cursor + CATALOGO_LOTE_TAMANHO
-
-  await env.FOTOS.put(
-    CATALOGO_CACHE_CHAVE,
-    JSON.stringify({ produtos: Array.from(mapa.values()), atualizadoEm: new Date().toISOString() })
-  )
-  await env.FOTOS.put(CATALOGO_CURSOR_CHAVE, String(proximoCursor))
-}
-
-async function handleCatalogoPronto(env, ctx) {
-  const bruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
-  return jsonResponse(bruto ? JSON.parse(bruto) : { produtos: [] }, 200, {
-    'Cache-Control': 'public, max-age=120'
-  })
-}
-
-async function preAquecerCatalogoAgendado(env) {
-  await preAquecerCatalogoLote(env)
-}
-
-async function handleCatalogoDebug(env) {
-  const cursorBruto = await env.FOTOS.get(CATALOGO_CURSOR_CHAVE)
-  const cacheBruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
-  const listagem = await env.FOTOS.list({ limit: 200 })
-  const codigos = listagem.keys
-const CATALOGO_CACHE_CHAVE = '_catalogo_pronto'
-const CATALOGO_CURSOR_CHAVE = '_catalogo_cursor'
-const CATALOGO_LOTE_TAMANHO = 20
-const CATALOGO_LOTE_PREFIXO = '_catalogo_lote_'
-
-async function preAquecerCatalogoLote(env) {
-  const listagem = await env.FOTOS.list({ limit: 200 })
-  const codigos = listagem.keys
-    .filter((k) => k.name !== VENDEDORES_CHAVE && !k.name.startsWith('_catalogo'))
-    .map((k) => ({ codigo: k.name, categoria: k.metadata?.categoria || '' }))
-
-  if (codigos.length === 0) {
-    await env.FOTOS.put(CATALOGO_CACHE_CHAVE, JSON.stringify({ totalLotes: 0, atualizadoEm: new Date().toISOString() }))
-    return
-  }
-
-  const totalLotes = Math.ceil(codigos.length / CATALOGO_LOTE_TAMANHO)
-const CATALOGO_CACHE_CHAVE = '_catalogo_pronto'
-const CATALOGO_CURSOR_CHAVE = '_catalogo_cursor'
-const CATALOGO_LOTE_TAMANHO = 20
-const CATALOGO_LOTE_PREFIXO = '_catalogo_lote_'
-
-async function preAquecerCatalogoLote(env) {
-  const listagem = await env.FOTOS.list({ limit: 200 })
-  const codigos = listagem.keys
-    .filter((k) => k.name !== VENDEDORES_CHAVE && !k.name.startsWith('_catalogo'))
-    .map((k) => ({ codigo: k.name, categoria: k.metadata?.categoria || '' }))
-
-  if (codigos.length === 0) {
-    await env.FOTOS.put(CATALOGO_CACHE_CHAVE, JSON.stringify({ totalLotes: 0, atualizadoEm: new Date().toISOString() }))
-    return
-  }
-
-  const totalLotes = Math.ceil(codigos.length / CATALOGO_LOTE_TAMANHO)
-
-  const cursorBruto = await env.FOTOS.get(CATALOGO_CURSOR_CHAVE)
-  let indiceLote = cursorBruto ? parseInt(cursorBruto, 10) : 0
-  if (!Number.isFinite(indiceLote) || indiceLote >= totalLotes) indiceLote = 0
-
-  const inicio = indiceLote * CATALOGO_LOTE_TAMANHO
-  const lote = codigos.slice(inicio, inicio + CATALOGO_LOTE_TAMANHO)
-
-  const resultados = await Promise.all(
-    lote.map(async (item) => {
-      try {
-        const dados = await buscarDadosProdutoMersan(item.codigo)
-        if (!dados.referencia || dados.referencia.includes('não encontrado')) return null
-
-        const estoque = await buscarEstoqueMersan(dados.referencia)
-        if (!estoque.length) return null
-
-        return {
-          codigo: item.codigo,
-          categoria: item.categoria,
-          promocao: dados.emPromocao,
-          nome: dados.nome,
-          preco: dados.preco,
-          precoOriginal: dados.precoOriginal
-        }
-      } catch {
-        return null
-      }
-    })
-  )
-
-  await env.FOTOS.put(`${CATALOGO_LOTE_PREFIXO}${indiceLote}`, JSON.stringify(resultados.filter(Boolean)))
-  await env.FOTOS.put(
-    CATALOGO_CACHE_CHAVE,
-    JSON.stringify({ totalLotes, atualizadoEm: new Date().toISOString() })
-  )
-
-  const proximoIndice = indiceLote + 1 >= totalLotes ? 0 : indiceLote + 1
-  await env.FOTOS.put(CATALOGO_CURSOR_CHAVE, String(proximoIndice))
-}
-
-async function handleCatalogoPronto(env, ctx) {
-  const indiceBruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
-  if (!indiceBruto) {
-    return jsonResponse({ produtos: [] }, 200)
-  }
-
-  const { totalLotes } = JSON.parse(indiceBruto)
-  if (!totalLotes) {
-    return jsonResponse({ produtos: [] }, 200)
-  }
-
-  const lotes = await Promise.all(
-    Array.from({ length: totalLotes }, (_, i) => env.FOTOS.get(`${CATALOGO_LOTE_PREFIXO}${i}`))
-  )
-
-  const produtos = lotes.flatMap((l) => (l ? JSON.parse(l) : []))
-
-  return jsonResponse({ produtos }, 200, {
-    'Cache-Control': 'public, max-age=120'
-  })
-}
-
-async function preAquecerCatalogoAgendado(env) {
-  await preAquecerCatalogoLote(env)
-}
+    return new Response('Vendedor não encontrado. Peça para recadastrar esse ve
