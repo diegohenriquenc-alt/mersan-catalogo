@@ -66,8 +66,12 @@ export default {
       return handleFotosPublicas(env)
     }
 
-    if (url.pathname === '/api/catalogo' && request.method === 'GET') {
-      return handleCatalogoPronto(env, ctx)
+    if (url.pathname === '/api/catalogo-debug' && request.method === 'GET') {
+      return handleCatalogoDebug(env)
+    }
+
+    if (url.pathname === '/api/catalogo-forcar' && request.method === 'GET') {
+      return handleCatalogoForcar(env)
     }
 
     if (url.pathname === '/api/catalogo-debug' && request.method === 'GET') {
