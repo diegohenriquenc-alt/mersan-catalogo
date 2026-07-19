@@ -101,8 +101,17 @@ export default {
   return handleIrVendedorCarrinho(request, url, env)
     }
 
-    // Qualquer outra rota: serve o site estático (React) normalmente.
-    return env.ASSETS.fetch(request)
+    // Qualquer outra rota: serve o site estático (React) normalmente,
+    // mas força o navegador a nunca guardar o HTML principal em cache —
+    // sem isso, quem já visitou o site uma vez pode ficar preso numa
+    // versão antiga por dias, mesmo abrindo o link de novo.
+    const respostaAssets = await env.ASSETS.fetch(request)
+    if (url.pathname === '/' || url.pathname.endsWith('.html')) {
+      const resposta = new Response(respostaAssets.body, respostaAssets)
+      resposta.headers.set('Cache-Control', 'no-cache')
+      return resposta
+    }
+    return respostaAssets
   },
 
   // Roda sozinho a cada 25 minutos (configurado no wrangler.jsonc). Consulta
