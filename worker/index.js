@@ -97,6 +97,9 @@ export default {
     if (url.pathname === '/ir-vendedor' && request.method === 'GET') {
       return handleIrVendedor(request, url, env)
     }
+    if (url.pathname === '/api/selecao' && request.method === 'GET') {
+  return handleObterSelecao(request, url, env)
+    }
     if (url.pathname === '/ir-vendedor-carrinho' && request.method === 'GET') {
   return handleIrVendedorCarrinho(request, url, env)
     }
@@ -598,6 +601,42 @@ async function handleFotosPublicas(env) {
 // numa chave reservada que nunca é usada como código de produto.
 
 const VENDEDORES_CHAVE = '_vendedores'
+const SELECOES_PREFIXO = '_selecao_'
+
+function gerarIdSelecao() {
+  return crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
+}
+
+async function salvarSelecao(env, itens) {
+  const id = gerarIdSelecao()
+  await env.FOTOS.put(
+    `${SELECOES_PREFIXO}${id}`,
+    JSON.stringify({ itens, criadoEm: new Date().toISOString() })
+  )
+  return id
+}
+
+async function getSelecao(env, id) {
+  const bruto = await env.FOTOS.get(`${SELECOES_PREFIXO}${id}`)
+  if (!bruto) return null
+  try {
+    return JSON.parse(bruto)
+  } catch {
+    return null
+  }
+}
+
+async function handleObterSelecao(request, url, env) {
+  const id = url.searchParams.get('id')
+  if (!id) {
+    return jsonResponse({ error: 'Parâmetro "id" é obrigatório.' }, 400)
+  }
+  const selecao = await getSelecao(env, id)
+  if (!selecao) {
+    return jsonResponse({ error: 'Seleção não encontrada.' }, 404)
+  }
+  return jsonResponse(selecao, 200)
+}
 
 async function getVendedores(env) {
   const bruto = await env.FOTOS.get(VENDEDORES_CHAVE)
