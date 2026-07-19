@@ -835,7 +835,9 @@ async function preAquecerCatalogoLote(env) {
     .map((k) => ({ codigo: k.name, categoria: k.metadata?.categoria || '' }))
 
   if (codigos.length === 0) {
-    await env.FOTOS.put(CATALOGO_CACHE_CHAVE, JSON.stringify({ totalLotes: 0, atualizadoEm: new Date().toISOString() }))
+    // Não zera o catálogo aqui: se a listagem vier vazia por uma falha
+    // passageira do KV, isso não pode apagar um catálogo que já estava
+    // funcionando. Só não faz nada e tenta de novo no próximo ciclo.
     return
   }
 
