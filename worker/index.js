@@ -838,7 +838,7 @@ async function preAquecerCatalogoLote(env) {
     // Não zera o catálogo aqui: se a listagem vier vazia por uma falha
     // passageira do KV, isso não pode apagar um catálogo que já estava
     // funcionando. Só não faz nada e tenta de novo no próximo ciclo.
-    return
+    return []
   }
 
   const totalLotes = Math.ceil(codigos.length / CATALOGO_LOTE_TAMANHO)
@@ -853,6 +853,7 @@ async function preAquecerCatalogoLote(env) {
   const cache = caches.default
   const origem = 'https://mersan-catalogo.diegohenriquenc.workers.dev'
 
+  const erros = []
   const resultados = await Promise.all(
     lote.map(async (item) => {
       try {
@@ -867,7 +868,7 @@ async function preAquecerCatalogoLote(env) {
           jsonResponse(dados, 200, { 'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}` })
         )
 
-        if (!dados.referencia || dados.referencia.includes('não encontrado')) return null
+        if (!dados.referencia || dados.referencia.includes('não encontrado')) { erros.push({ codigo: item.codigo, motivo: 'sem referência' }); return null }
 
         const estoque = await buscarEstoqueMersan(dados.referencia)
 
@@ -884,7 +885,7 @@ async function preAquecerCatalogoLote(env) {
           )
         )
 
-        if (!estoque.length) return null
+        if (!estoque.length) { erros.push({ codigo: item.codigo, motivo: 'sem estoque' }); return null }
 
         return {
           codigo: item.codigo,
@@ -895,8 +896,9 @@ async function preAquecerCatalogoLote(env) {
           preco: dados.preco,
           precoOriginal: dados.precoOriginal
         }
-      } catch {
-        return null
+      } catch (err) {
+  erros.push({ codigo: item.codigo, motivo: String(err?.message || err) })
+  return null
       }
     })
   )
@@ -909,6 +911,7 @@ async function preAquecerCatalogoLote(env) {
 
   const proximoIndice = indiceLote + 1 >= totalLotes ? 0 : indiceLote + 1
   await env.FOTOS.put(CATALOGO_CURSOR_CHAVE, String(proximoIndice))
+  return erros
 }
 
 // Só LÊ — nunca recalcula, nunca escreve. Junta os lotes já prontos (cada
@@ -975,7 +978,7 @@ async function handleCatalogoDebug(env) {
 }
 
 async function handleCatalogoForcar(env) {
-  await preAquecerCatalogoLote(env)
+  const erros = await preAquecerCatalogoLote(env)
   const indiceBruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
   if (!indiceBruto) return jsonResponse({ produtos: [] }, 200)
   const { totalLotes } = JSON.parse(indiceBruto)
@@ -983,5 +986,5 @@ async function handleCatalogoForcar(env) {
     Array.from({ length: totalLotes || 0 }, (_, i) => env.FOTOS.get(`${CATALOGO_LOTE_PREFIXO}${i}`))
   )
   const produtos = lotes.flatMap((l) => (l ? JSON.parse(l) : []))
-  return jsonResponse({ produtos }, 200)
+  return jsonResponse({ produtos, erros }, 200)
 }
