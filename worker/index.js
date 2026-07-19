@@ -885,7 +885,7 @@ async function preAquecerCatalogoLote(env) {
           )
         )
 
-        if (!estoque.length) { erros.push({ codigo: item.codigo, motivo: 'sem estoque' }); return null }
+        if (!estoque.length) { erros.push({ codigo: item.codigo, motivo: 'sem estoque' }) }
 
         const estoqueTotal = estoque.reduce((soma, i) => soma + (i.pares || 0), 0)
 
