@@ -773,6 +773,24 @@ async function handleAdminRecalcularCategorias(request, env) {
   }
 
   const mapa = await getCategoriasPlanilha(env)
+
+  // O código usado pra cadastrar a foto (código de barras) não é o mesmo
+  // "Código" da planilha (que é o SKU interno da Mersan). Cruzamos usando
+  // o codigoSku que já fica guardado nos lotes do catálogo pronto — sem
+  // precisar consultar a Mersan de novo aqui.
+  const indiceBrutoCatalogo = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
+  const totalLotesCatalogo = indiceBrutoCatalogo ? JSON.parse(indiceBrutoCatalogo).totalLotes || 0 : 0
+  const lotesGuardados = await Promise.all(
+    Array.from({ length: totalLotesCatalogo }, (_, i) => env.FOTOS.get(`${CATALOGO_LOTE_PREFIXO}${i}`))
+  )
+  const skuPorCodigo = {}
+  for (const bruto of lotesGuardados) {
+    if (!bruto) continue
+    for (const produto of JSON.parse(bruto)) {
+      if (produto.codigoSku) skuPorCodigo[produto.codigo] = String(produto.codigoSku)
+    }
+  }
+
   const listagem = await env.FOTOS.list({ limit: 200 })
   const fotos = listagem.keys.filter(
     (k) =>
@@ -786,9 +804,13 @@ async function handleAdminRecalcularCategorias(request, env) {
 
   let atualizados = 0
   let encontrados = 0
+  let semSku = 0
 
   for (const chaveInfo of fotos) {
-    const categoriaNova = mapa[chaveInfo.name]
+    const sku = skuPorCodigo[chaveInfo.name]
+    if (!sku) { semSku++; continue }
+
+    const categoriaNova = mapa[sku]
     if (!categoriaNova) continue
     encontrados++
 
@@ -812,7 +834,8 @@ async function handleAdminRecalcularCategorias(request, env) {
     ok: true,
     totalFotos: fotos.length,
     encontradosNaPlanilha: encontrados,
-    atualizados
+    atualizados,
+    semDadosDeSku: semSku
   })
 }
 
