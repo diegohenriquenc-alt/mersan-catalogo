@@ -936,8 +936,103 @@ async function handleIrVendedorCarrinho(request, url, env) {
       linhas.push(`Parcelamento: ${parcelasFinal}x de R$ ${valorParcela}`)
     }
     linhas.push('')
+async function handleIrVendedorCarrinho(request, url, env) {
+  const vendedorId = url.searchParams.get('vendedor')
+  const itensBrutos = url.searchParams.get('itens')
+  const parcelasEscolhidas = Number(url.searchParams.get('parcelas')) || null
+
+  if (!vendedorId || !itensBrutos) {
+    return new Response('Link inválido.', { status: 400 })
   }
 
+  let itens
+  try {
+    itens = JSON.parse(itensBrutos)
+  } catch {
+    return new Response('Link inválido.', { status: 400 })
+  }
+
+  if (!Array.isArray(itens) || itens.length === 0) {
+    return new Response('Carrinho vazio.', { status: 400 })
+  }
+
+  const lista = await getVendedores(env)
+  const vendedor = lista.find((v) => v.id === vendedorId)
+
+  if (!vendedor) {
+    return new Response('Vendedor não encontrado.', { status: 404 })
+  }
+
+  const numeroValido = /^\d{10,15}$/.test(vendedor.whatsapp || '')
+  if (!numeroValido) {
+    return new Response(
+      `O WhatsApp cadastrado para "${vendedor.nome}" parece inválido. Peça para o administrador corrigir no painel.`,
+      { status: 500 }
+    )
+  }
+
+  const itensDetalhados = []
+  let total = 0
+
+  for (const item of itens) {
+    const codigo = item?.codigo
+    const tamanho = item?.tamanho
+    if (!codigo) continue
+
+    let referencia = codigo
+    let preco = null
+    try {
+      const controlador = new AbortController()
+      const tempoLimite = setTimeout(() => controlador.abort(), 4000)
+      const dados = await buscarDadosProdutoMersan(codigo, controlador.signal)
+      clearTimeout(tempoLimite)
+      referencia = dados.referencia || codigo
+      preco = dados.preco
+    } catch {
+      // Sem dados: segue só com o código no lugar da referência.
+    }
+
+    if (preco != null) total += preco
+    itensDetalhados.push({ codigo, tamanho, referencia })
+  }
+
+  const idSelecao = await salvarSelecao(env, itens.map((i) => ({ codigo: i.codigo, tamanho: i.tamanho })))
+  const linkSelecao = `${url.origin}/selecao/${idSelecao}`
+
+  const linhas = [
+    '🛍️ Tenho interesse nestes produtos da Mersan Calçados.',
+    '',
+    `📦 Itens selecionados: ${itensDetalhados.length}`,
+    ''
+  ]
+
+  for (const item of itensDetalhados) {
+    const partes = [`Ref. ${referenciaParaCliente(item.referencia)}`]
+    if (item.tamanho) partes.push(`Tam. ${item.tamanho}`)
+    linhas.push(`• ${partes.join(' | ')}`)
+  }
+
+  linhas.push('')
+
+  if (total > 0) {
+    linhas.push(`💰 Total: R$ ${total.toFixed(2).replace('.', ',')}`)
+
+    const maxParcelas = Math.min(MAX_PARCELAS, Math.max(1, Math.floor(total / PARCELA_MINIMA)))
+    const parcelasFinal =
+      parcelasEscolhidas && parcelasEscolhidas >= 1 && parcelasEscolhidas <= maxParcelas
+        ? parcelasEscolhidas
+        : maxParcelas
+
+    if (parcelasFinal > 1) {
+      const valorParcela = (total / parcelasFinal).toFixed(2).replace('.', ',')
+      linhas.push(`Parcelamento: ${parcelasFinal}x de R$ ${valorParcela}`)
+    }
+    linhas.push('')
+  }
+
+  linhas.push('🔗 Ver minha seleção:')
+  linhas.push(linkSelecao)
+  linhas.push('')
   linhas.push('Gostaria de mais informações.')
 
   const mensagem = linhas.join('\n')
@@ -948,9 +1043,7 @@ async function handleIrVendedorCarrinho(request, url, env) {
   } catch {
     return paginaLinkManual(linkWhatsApp, `Toque no botão abaixo para falar com ${vendedor.nome}:`)
   }
-}
-
-// ---------- Utilitário ----------
+    }
 
 function jsonResponse(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
