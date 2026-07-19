@@ -695,20 +695,19 @@ async function handleAdminSalvarVendedor(request, env) {
     return jsonResponse({ error: 'Envie "nome" e "whatsapp".' }, 400)
   }
 
-  async function handleAdminExcluirVendedor(request, url, env) {
-  if (!autenticado(request, env)) {
-    return jsonResponse({ error: 'Senha incorreta.' }, 401)
-  }
-
-  const id = url.searchParams.get('id')
-  if (!id) {
-    return jsonResponse({ error: 'Parâmetro "id" é obrigatório.' }, 400)
-  }
-
   const lista = await getVendedores(env)
-  const nova = lista.filter((v) => v.id !== id)
-  await salvarVendedores(env, nova)
-  return jsonResponse({ ok: true })
+  const id = corpo?.id || crypto.randomUUID()
+  const existente = lista.findIndex((v) => v.id === id)
+  const registro = { id, nome, whatsapp }
+
+  if (existente >= 0) {
+    lista[existente] = registro
+  } else {
+    lista.push(registro)
+  }
+
+  await salvarVendedores(env, lista)
+  return jsonResponse({ ok: true, vendedor: registro })
 }
 
 // ---------- Categorias por planilha de gênero/faixa etária ----------
