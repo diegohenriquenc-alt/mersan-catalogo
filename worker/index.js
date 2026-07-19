@@ -886,19 +886,23 @@ async function preAquecerCatalogoLote(env) {
         )
 
         if (!estoque.length) { erros.push({ codigo: item.codigo, motivo: 'sem estoque' }) }
+const estoqueTotal = estoque.reduce((soma, i) => soma + (i.pares || 0), 0)
 
-        const estoqueTotal = estoque.reduce((soma, i) => soma + (i.pares || 0), 0)
+if (estoqueTotal === 0) {
+  erros.push({ codigo: item.codigo, motivo: 'sem estoque' })
+  return null
+}
 
-        return {
-          codigo: item.codigo,
-          categoria: item.categoria,
-          promocao: dados.emPromocao,
-          nome: dados.nome,
-          tamanho: dados.tamanho,
-          preco: dados.preco,
-          precoOriginal: dados.precoOriginal,
-          estoqueTotal
-        }
+return {
+  codigo: item.codigo,
+  categoria: item.categoria,
+  promocao: dados.emPromocao,
+  nome: dados.nome,
+  tamanho: dados.tamanho,
+  preco: dados.preco,
+  precoOriginal: dados.precoOriginal,
+  estoqueTotal
+}
       } catch (err) {
   erros.push({ codigo: item.codigo, motivo: String(err?.message || err) })
   return null
