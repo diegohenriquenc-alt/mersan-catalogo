@@ -188,7 +188,7 @@ export default function Catalogo() {
               <Link key={p.codigo} to={`/produto/${encodeURIComponent(p.codigo)}`} style={styles.card}>
                 <div style={styles.fotoWrapper}>
                   {p.promocao && <span style={styles.selo}>PROMOÇÃO</span>}
-{!p.promocao && p.estoqueTotal <= 2 && <span style={styles.selo}>ÚLTIMAS UNIDADES</span>}
+{p.estoqueTotal <= 2 && <span style={styles.selo}>ÚLTIMAS UNIDADES</span>}
                   <img
                     src={`/produto-foto/${encodeURIComponent(p.codigo)}`}
                     alt={p.nome}
