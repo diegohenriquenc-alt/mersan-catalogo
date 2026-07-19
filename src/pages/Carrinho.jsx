@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { listarCarrinho, removerDoCarrinho, definirTamanho } from '../utils/carrinho.js'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
+const PARCELA_MINIMA = 29.99
+const MAX_PARCELAS = 10
 
 export default function Carrinho() {
   const [itens, setItens] = useState(listarCarrinho())
@@ -11,6 +13,7 @@ export default function Carrinho() {
   const [loading, setLoading] = useState(true)
   const [vendedores, setVendedores] = useState([])
   const [vendedorEscolhido, setVendedorEscolhido] = useState(null)
+  const [parcelasEscolhidas, setParcelasEscolhidas] = useState('')
 
   useEffect(() => {
     function atualizar() {
@@ -65,17 +68,28 @@ export default function Carrinho() {
     removerDoCarrinho(codigo)
   }
 
+  const total = itens.reduce((soma, item) => {
+    const p = produtos[item.codigo]
+    return p?.preco ? soma + Number(p.preco) : soma
+  }, 0)
+
+  const maxParcelas = total > 0
+    ? Math.min(MAX_PARCELAS, Math.max(1, Math.floor(total / PARCELA_MINIMA)))
+    : 1
+  const opcoesParcelas = Array.from({ length: maxParcelas }, (_, i) => i + 1)
+
   function handleFinalizar() {
     const itensParaEnviar = itens.map((i) => ({ codigo: i.codigo, tamanho: i.tamanho }))
     const params = new URLSearchParams({
       vendedor: vendedorEscolhido,
-      itens: JSON.stringify(itensParaEnviar)
+      itens: JSON.stringify(itensParaEnviar),
+      parcelas: String(parcelasEscolhidas)
     })
     window.location.href = `/ir-vendedor-carrinho?${params.toString()}`
   }
 
   const todosComTamanho = itens.length > 0 && itens.every((i) => i.tamanho)
-  const podeFinalizar = todosComTamanho && Boolean(vendedorEscolhido)
+  const podeFinalizar = todosComTamanho && Boolean(vendedorEscolhido) && Boolean(parcelasEscolhidas)
 
   return (
     <div style={styles.pagina}>
@@ -151,6 +165,26 @@ export default function Carrinho() {
           })}
         </div>
 
+        {total > 0 && (
+          <div style={styles.blocoVendedor}>
+            <span style={styles.tituloVendedor}>Total: R$ {total.toFixed(2).replace('.', ',')}</span>
+            <select
+              value={parcelasEscolhidas}
+              onChange={(e) => setParcelasEscolhidas(e.target.value)}
+              style={styles.selectTamanho}
+            >
+              <option value="" disabled>Selecione o parcelamento</option>
+              {opcoesParcelas.map((n) => (
+                <option key={n} value={n}>
+                  {n === 1
+                    ? `À vista – R$ ${total.toFixed(2).replace('.', ',')}`
+                    : `${n}x de R$ ${(total / n).toFixed(2).replace('.', ',')}`}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {itens.length > 0 && (
           <button
             disabled={!podeFinalizar}
@@ -216,4 +250,4 @@ const styles = {
     background: '#e4002b', color: '#fff', border: 'none', borderRadius: '13px',
     padding: '16px', fontSize: '16px', fontWeight: 800, cursor: 'pointer'
   }
-    }
+}
