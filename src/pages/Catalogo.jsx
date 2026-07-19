@@ -240,11 +240,7 @@ export default function Catalogo() {
                   {marca && <span style={styles.marcaEtiqueta}>{marca}</span>}
                   <span style={styles.nome}>{nomeExibido}</span>
 
-                  {p.tamanho && (
-                    <span style={styles.tamanhoLinha}>
-                      Tamanho: <span style={styles.tamanhoValor}>{p.tamanho}</span>
-                    </span>
-                  )}
+                  
 
                   <div style={styles.precoBloco}>
                     {p.promocao && p.precoOriginal > p.preco && (
