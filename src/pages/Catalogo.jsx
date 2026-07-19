@@ -102,7 +102,14 @@ export default function Catalogo() {
     const executarOcioso = window.requestIdleCallback || ((cb) => setTimeout(cb, 300))
     const idleId = executarOcioso(() => {
       produtos.slice(0, 9).forEach((p) => {
-        fetch(`/api/produto?termo=${encodeURIComponent(p.codigo)}`).catch(() => {})
+        fetch(`/api/produto?termo=${encodeURIComponent(p.codigo)}`)
+          .then((r) => r.json())
+          .then((dados) => {
+            if (dados?.referencia) {
+              fetch(`/api/estoque?referencia=${encodeURIComponent(dados.referencia)}`).catch(() => {})
+            }
+          })
+          .catch(() => {})
       })
     })
     return () => {
