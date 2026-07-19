@@ -7,6 +7,7 @@ import Produto from './pages/Produto.jsx'
 import Catalogo from './pages/Catalogo.jsx'
 import Favoritos from './pages/Favoritos.jsx'
 import Carrinho from './pages/Carrinho.jsx'
+import Selecao from './pages/Selecao.jsx'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -17,7 +18,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route index element={<Catalogo />} />
           <Route path="admin" element={<Admin />} />
           <Route path="produto/:codigo" element={<Produto />} />
-          <Route path="favoritos" element={<Favoritos />} />
+          <Route path="carrinho" element={<Carrinho />} />
+          <Route path="selecao/:id" element={<Selecao />} />
           <Route path="carrinho" element={<Carrinho />} />
         </Route>
       </Routes>
