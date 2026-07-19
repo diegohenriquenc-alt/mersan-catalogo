@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ehFavorito, alternarFavorito, contarFavoritos } from '../utils/favoritos.js'
+import { estaNoCarrinho, adicionarAoCarrinho } from '../utils/carrinho.js'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
@@ -53,6 +54,7 @@ export default function Catalogo() {
   const [termoBusca, setTermoBusca] = useState('')
   const [categoriaAtiva, setCategoriaAtiva] = useState(null)
   const [favoritosVersao, setFavoritosVersao] = useState(0)
+  const [carrinhoVersao, setCarrinhoVersao] = useState(0)
 
   useEffect(() => {
     let cancelado = false
@@ -217,6 +219,17 @@ export default function Catalogo() {
                     }}
                   />
                 </div>
+                <button
+  onClick={(e) => {
+    e.preventDefault()
+    adicionarAoCarrinho(p.codigo)
+    setCarrinhoVersao((v) => v + 1)
+  }}
+  style={styles.botaoCarrinho}
+  aria-label="Adicionar ao carrinho"
+>
+  {estaNoCarrinho(p.codigo) ? '✅' : '🛒'}
+</button>
 
                 <div style={styles.cardInfo}>
                   {marca && <span style={styles.marcaEtiqueta}>{marca}</span>}
