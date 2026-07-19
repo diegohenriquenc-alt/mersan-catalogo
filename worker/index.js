@@ -847,74 +847,7 @@ async function handleIrVendedor(request, url, env) {
     return paginaLinkManual(linkWhatsApp, `Toque no botão abaixo para falar com ${vendedor.nome}:`)
   }
 }
-async function handleIrVendedorCarrinho(request, url, env) {
 
-
-  let itens
-  try {
-    itens = JSON.parse(itensBrutos)
-  } catch {
-    return new Response('Link inválido.', { status: 400 })
-  }
-
-  if (!Array.isArray(itens) || itens.length === 0) {
-    return new Response('Carrinho vazio.', { status: 400 })
-  }
-
-  const lista = await getVendedores(env)
-  const vendedor = lista.find((v) => v.id === vendedorId)
-
-  if (!vendedor) {
-    return new Response('Vendedor não encontrado.', { status: 404 })
-  }
-
-  const numeroValido = /^\d{10,15}$/.test(vendedor.whatsapp || '')
-  if (!numeroValido) {
-    return new Response(
-      `O WhatsApp cadastrado para "${vendedor.nome}" parece inválido. Peça para o administrador corrigir no painel.`,
-      { status: 500 }
-    )
-  }
-
-  const linhas = ['Olá!', 'Tenho interesse nestes produtos da Mersan Calçados:', '']
-  let total = 0
-  let indice = 1
-
-  for (const item of itens) {
-    const codigo = item?.codigo
-    const tamanho = item?.tamanho
-    if (!codigo) continue
-
-    let nomeProduto = codigo
-    let referencia = null
-    let cor = null
-    let preco = null
-
-    try {
-      const controlador = new AbortController()
-      const tempoLimite = setTimeout(() => controlador.abort(), 4000)
-      const dados = await buscarDadosProdutoMersan(codigo, controlador.signal)
-      clearTimeout(tempoLimite)
-      nomeProduto = dados.nome
-      referencia = dados.referencia
-      cor = dados.cor
-      preco = dados.preco
-    } catch {
-      // Sem dados: segue só com o código.
-    }
-
-    linhas.push(`${indice}. ${nomeProduto}`)
-    if (referencia) linhas.push(`Referência: ${referenciaParaCliente(referencia)}`)
-    if (cor) linhas.push(`Cor: ${cor}`)
-    if (tamanho) linhas.push(`Tamanho: ${tamanho}`)
-    if (preco != null) {
-      linhas.push(`Valor: R$ ${preco.toFixed(2).replace('.', ',')}`)
-      total += preco
-    }
-    linhas.push(`Link: ${url.origin}/produto/${encodeURIComponent(codigo)}?v=${Date.now()}`)
-    linhas.push('')
-    indice++
-  }
 
 async function handleIrVendedorCarrinho(request, url, env) {
   const vendedorId = url.searchParams.get('vendedor')
