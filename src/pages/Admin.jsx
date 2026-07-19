@@ -337,8 +337,15 @@ function PainelFotos({ senha }) {
 
   function handleArquivoPlanilha(e) {
     const file = e.target.files?.[0] || null
-    setArquivoPlanilha(file)
     setTotalCodigosPlanilha(null)
+
+    if (file && !file.name.toLowerCase().endsWith('.csv')) {
+      setArquivoPlanilha(null)
+      setStatusPlanilha({ tipo: 'erro', texto: 'Esse arquivo não parece ser um .csv. Escolha o arquivo certo.' })
+      return
+    }
+
+    setArquivoPlanilha(file)
     setStatusPlanilha(null)
   }
 
