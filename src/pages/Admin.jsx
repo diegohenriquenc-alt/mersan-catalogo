@@ -84,10 +84,17 @@ function PainelFotos({ senha }) {
   const [salvandoVendedor, setSalvandoVendedor] = useState(false)
 
   const [scanAtivo, setScanAtivo] = useState(false)
-  const [scanErro, setScanErro] = useState(null)
-  const videoRef = useRef(null)
-  const streamRef = useRef(null)
-  const scanLoopRef = useRef(null)
+    const [scanErro, setScanErro] = useState(null)
+    const videoRef = useRef(null)
+    const streamRef = useRef(null)
+    const scanLoopRef = useRef(null)
+
+    const [arquivoPlanilha, setArquivoPlanilha] = useState(null)
+    const [totalCodigosPlanilha, setTotalCodigosPlanilha] = useState(null)
+    const [enviandoPlanilha, setEnviandoPlanilha] = useState(false)
+    const [statusPlanilha, setStatusPlanilha] = useState(null)
+    const [recalculando, setRecalculando] = useState(false)
+    const [statusRecalculo, setStatusRecalculo] = useState(null)
 
   const carregarLista = useCallback(async () => {
     setCarregandoLista(true)
