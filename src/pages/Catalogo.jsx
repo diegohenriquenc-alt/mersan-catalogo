@@ -52,6 +52,7 @@ export default function Catalogo() {
   const [buscaAberta, setBuscaAberta] = useState(false)
   const [termoBusca, setTermoBusca] = useState('')
   const [categoriaAtiva, setCategoriaAtiva] = useState(null)
+  const [favoritosVersao, setFavoritosVersao] = useState(0)
 
   useEffect(() => {
     let cancelado = false
@@ -189,6 +190,17 @@ export default function Catalogo() {
               <Link key={p.codigo} to={`/produto/${encodeURIComponent(p.codigo)}`} style={styles.card}>
                 <div style={styles.fotoWrapper}>
                   {p.promocao && <span style={styles.selo}>PROMOÇÃO</span>}
+                  <button
+  onClick={(e) => {
+    e.preventDefault()
+    alternarFavorito(p.codigo)
+    setFavoritosVersao((v) => v + 1)
+  }}
+  style={styles.botaoFavorito}
+  aria-label="Favoritar"
+>
+  {ehFavorito(p.codigo) ? '❤️' : '🤍'}
+</button>
 {p.estoqueTotal <= 2 && <span style={styles.selo}>ÚLTIMAS UNIDADES</span>}
                   <img
                     src={`/produto-foto/${encodeURIComponent(p.codigo)}`}
