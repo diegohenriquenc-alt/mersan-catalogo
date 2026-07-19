@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ehFavorito, alternarFavorito, contarFavoritos } from '../utils/favoritos.js'
-import { estaNoCarrinho, adicionarAoCarrinho } from '../utils/carrinho.js'
+import { estaNoCarrinho, adicionarAoCarrinho, contarCarrinho } from '../utils/carrinho.js'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
@@ -149,6 +149,11 @@ export default function Catalogo() {
           <Link to="/favoritos" style={styles.iconeBotaoFavorito} aria-label="Meus favoritos">
             <span>❤️</span>
             <span style={styles.badgeFavoritos}>{contarFavoritos()}</span>
+          </Link>
+
+          <Link to="/carrinho" style={styles.iconeBotaoFavorito} aria-label="Meu carrinho">
+            <span>🛒</span>
+            <span style={styles.badgeFavoritos}>{contarCarrinho()}</span>
           </Link>
         </div>
 
