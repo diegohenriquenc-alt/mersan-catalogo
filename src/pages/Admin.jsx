@@ -595,10 +595,12 @@ function PainelFotos({ senha }) {
             >
               <option value="">Sem categoria</option>
               <option value="Feminino">Feminino</option>
-              <option value="Masculino">Masculino</option>
-              <option value="Infantil">Infantil</option>
-              <option value="Esportivo">Esportivo</option>
-              <option value="Arezzo">Arezzo</option>
+<option value="Masculino">Masculino</option>
+<option value="Infantil Feminino">Infantil Feminino</option>
+<option value="Infantil Masculino">Infantil Masculino</option>
+<option value="Esportivo Feminino">Esportivo Feminino</option>
+<option value="Esportivo Masculino">Esportivo Masculino</option>
+<option value="Arezzo">Arezzo</option>
             </select>
           </label>
 
