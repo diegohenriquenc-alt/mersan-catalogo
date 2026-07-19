@@ -97,6 +97,9 @@ export default {
     if (url.pathname === '/ir-vendedor' && request.method === 'GET') {
       return handleIrVendedor(request, url, env)
     }
+    if (url.pathname === '/ir-vendedor-carrinho' && request.method === 'GET') {
+  return handleIrVendedorCarrinho(request, url, env)
+    }
 
     // Qualquer outra rota: serve o site estático (React) normalmente.
     return env.ASSETS.fetch(request)
