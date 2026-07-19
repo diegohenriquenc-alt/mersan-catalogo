@@ -267,7 +267,154 @@ function PainelFotos({ senha }) {
     return new File([ultimoBlob], 'foto.jpg', { type: 'image/jpeg' })
   }
 
-  async function handleEnviar(e) {
+  // Calcula a(s) categoria(s) de um item da planilha, seguindo a mesma
+  // regra combinada: Infantil e Esportivo (linha "ESPORTE") têm prioridade
+  // sobre o gênero puro; Unisex entra nas duas categorias de gênero.
+  function calcularCategoriasPlanilha(faixaEtaria, genero, linha) {
+    const infantil = (faixaEtaria || '').trim().toUpperCase() === 'INFANTIL'
+    const esportivo = (linha || '').trim().toUpperCase() === 'ESPORTE'
+    const generoNormalizado = (genero || '').trim().toUpperCase()
+    const generos = generoNormalizado === 'UNISEX' ? ['MASCULINO', 'FEMININO'] : [generoNormalizado]
+
+    return generos
+      .filter((g) => g === 'MASCULINO' || g === 'FEMININO')
+      .map((g) => {
+        const rotulo = g === 'MASCULINO' ? 'Masculino' : 'Feminino'
+        if (infantil) return `Infantil ${rotulo}`
+        if (esportivo) return `Esportivo ${rotulo}`
+        return rotulo
+      })
+  }
+
+  // Parser simples de CSV, com suporte a campos entre aspas (caso a
+  // descrição do produto tenha vírgula). Funciona tanto com CSV separado
+  // por vírgula quanto por ponto e vírgula (detecta pelo cabeçalho).
+  function parseCsv(texto) {
+    const linhas = texto.split(/\r\n|\n|\r/).filter((l) => l.length > 0)
+    if (linhas.length === 0) return []
+
+    const separador = linhas[0].includes(';') && !linhas[0].includes(',') ? ';' : ','
+
+    function parseLinha(linha) {
+      const campos = []
+      let atual = ''
+      let dentroAspas = false
+      for (let i = 0; i < linha.length; i++) {
+        const c = linha[i]
+        if (c === '"') {
+          dentroAspas = !dentroAspas
+        } else if (c === separador && !dentroAspas) {
+          campos.push(atual)
+          atual = ''
+        } else {
+          atual += c
+        }
+      }
+      campos.push(atual)
+      return campos.map((c) => c.trim())
+    }
+
+    const cabecalho = parseLinha(linhas[0]).map((c) => c.toLowerCase())
+    const idxCodigo = cabecalho.findIndex((c) => c.includes('código') || c.includes('codigo'))
+    const idxFaixa = cabecalho.findIndex((c) => c.includes('faixa'))
+    const idxGenero = cabecalho.findIndex((c) => c.includes('gênero') || c.includes('genero'))
+    const idxLinha = cabecalho.findIndex((c) => c === 'linha')
+
+    const registros = []
+    for (let i = 1; i < linhas.length; i++) {
+      const campos = parseLinha(linhas[i])
+      const codigo = idxCodigo >= 0 ? campos[idxCodigo] : null
+      if (!codigo) continue
+      registros.push({
+        codigo,
+        faixaEtaria: idxFaixa >= 0 ? campos[idxFaixa] : '',
+        genero: idxGenero >= 0 ? campos[idxGenero] : '',
+        linha: idxLinha >= 0 ? campos[idxLinha] : ''
+      })
+    }
+    return registros
+  }
+
+  function handleArquivoPlanilha(e) {
+    const file = e.target.files?.[0] || null
+    setArquivoPlanilha(file)
+    setTotalCodigosPlanilha(null)
+    setStatusPlanilha(null)
+  }
+
+  async function handleEnviarPlanilha() {
+    if (!arquivoPlanilha) return
+    setEnviandoPlanilha(true)
+    setStatusPlanilha(null)
+
+    try {
+      const texto = await arquivoPlanilha.text()
+      const registros = parseCsv(texto)
+
+      const mapa = {}
+      for (const registro of registros) {
+        const categorias = calcularCategoriasPlanilha(registro.faixaEtaria, registro.genero, registro.linha)
+        if (categorias.length === 0) continue
+        mapa[registro.codigo] = categorias.join(', ')
+      }
+
+      const totalCodigos = Object.keys(mapa).length
+      setTotalCodigosPlanilha(totalCodigos)
+
+      if (totalCodigos === 0) {
+        setStatusPlanilha({ tipo: 'erro', texto: 'Não achei colunas de código/gênero reconhecíveis nesse arquivo.' })
+        return
+      }
+
+      const resp = await fetch('/api/admin/planilha-generos', {
+        method: 'POST',
+        headers: {
+          'X-Admin-Password': senha,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ mapa })
+      })
+      const data = await resp.json()
+
+      if (!resp.ok) {
+        setStatusPlanilha({ tipo: 'erro', texto: data.error || 'Falha ao enviar a planilha.' })
+      } else {
+        setStatusPlanilha({
+          tipo: 'sucesso',
+          texto: `Planilha salva: ${data.totalCodigos} códigos. Agora bipe produtos novos ou use "Recalcular categorias" para os já cadastrados.`
+        })
+      }
+    } catch {
+      setStatusPlanilha({ tipo: 'erro', texto: 'Não foi possível ler ou enviar esse arquivo.' })
+    } finally {
+      setEnviandoPlanilha(false)
+    }
+  }
+
+  async function handleRecalcularCategorias() {
+    setRecalculando(true)
+    setStatusRecalculo(null)
+    try {
+      const resp = await fetch('/api/admin/recalcular-categorias', {
+        method: 'POST',
+        headers: { 'X-Admin-Password': senha }
+      })
+      const data = await resp.json()
+      if (!resp.ok) {
+        setStatusRecalculo({ tipo: 'erro', texto: data.error || 'Falha ao recalcular.' })
+      } else {
+        setStatusRecalculo({
+          tipo: 'sucesso',
+          texto: `${data.atualizados} de ${data.totalFotos} produtos atualizados (${data.encontradosNaPlanilha} encontrados na planilha).`
+        })
+        carregarLista()
+      }
+    } catch {
+      setStatusRecalculo({ tipo: 'erro', texto: 'Não foi possível conectar.' })
+    } finally {
+      setRecalculando(false)
+    }
+      }async function handleEnviar(e) {
     e.preventDefault()
     if (!codigo) return
     if (!arquivo && !editando) return
