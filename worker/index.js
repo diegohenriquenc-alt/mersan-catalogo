@@ -467,11 +467,20 @@ async function handleAdminUploadFoto(request, env) {
     return jsonResponse({ error: 'Arquivo grande demais (máximo 24MB).' }, 400)
   }
 
-  // Se o código bipado já está na planilha de gêneros carregada, a
-  // categoria vem automática de lá (tem prioridade sobre a escolha manual
-  // do formulário). Se não estiver na planilha, usa a escolha manual.
-  const mapaCategorias = await getCategoriasPlanilha(env)
-  const categoria = mapaCategorias[chave] || categoriaManual
+// A planilha usa o SKU interno da Mersan como código, não o código de
+  // barras usado aqui pra guardar a foto — então consultamos a Mersan pra
+  // saber o SKU deste produto antes de cruzar com a planilha. Se não
+  // encontrar, usa a escolha manual do formulário.
+  let categoria = categoriaManual
+  try {
+    const dadosProduto = await buscarDadosProdutoMersan(chave)
+    const mapaCategorias = await getCategoriasPlanilha(env)
+    if (dadosProduto.codigoSku && mapaCategorias[String(dadosProduto.codigoSku)]) {
+      categoria = mapaCategorias[String(dadosProduto.codigoSku)]
+    }
+  } catch {
+    // Sem dados da Mersan agora: mantém a categoria escolhida manualmente.
+  }
 
   await env.FOTOS.put(chave, bytes, {
     metadata: {
@@ -1165,6 +1174,7 @@ if (estoqueTotal === 0) {
 return {
   codigo: item.codigo,
   categoria: item.categoria,
+  codigoSku: dados.codigoSku,
   promocao: dados.emPromocao,
   nome: dados.nome,
   tamanho: dados.tamanho,
