@@ -7,7 +7,7 @@ const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
 const MAX_PARCELAS = 10
 
-const CATEGORIAS = ['Feminino', 'Masculino', 'Infantil', 'Esportivo', 'Arezzo', 'Promoção']
+const CATEGORIAS = ['Feminino', 'Masculino', 'Infantil Feminino', 'Infantil Masculino', 'Esportivo Feminino', 'Esportivo Masculino', 'Arezzo', 'Promoção']
 
 const PALAVRAS_NAO_MARCA = new Set([
   'CASUAL', 'CORRIDA', 'ESPORTIVO', 'CONFORTO', 'SOCIAL', 'INFANTIL'
@@ -90,7 +90,11 @@ export default function Catalogo() {
     if (categoriaAtiva === 'Promoção') {
       lista = lista.filter((p) => p.promocao)
     } else if (categoriaAtiva) {
-      lista = lista.filter((p) => p.categoria === categoriaAtiva)
+      // Um produto pode ter mais de uma categoria (ex: unisex entra em
+      // "Masculino, Feminino"), guardadas separadas por vírgula.
+      lista = lista.filter((p) =>
+        (p.categoria || '').split(',').map((c) => c.trim()).includes(categoriaAtiva)
+      )
     }
 
     if (termoBusca.trim()) {
