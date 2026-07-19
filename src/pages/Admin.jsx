@@ -709,6 +709,48 @@ function PainelFotos({ senha }) {
         </div>
 
         <div style={styles.listaBox}>
+          <h2 style={styles.subtitulo}>Planilha de Gêneros</h2>
+          <p style={styles.vazio}>
+            Sobe a planilha (CSV) com as colunas Código, Faixa Etária, Gênero e Linha.
+            Produtos bipados depois disso já vêm com a categoria automática.
+            Pra aplicar nos produtos que já estão cadastrados, use "Recalcular categorias".
+          </p>
+
+          <label style={styles.label}>
+            Arquivo da planilha (.csv)
+            <input type="file" accept=".csv" onChange={handleArquivoPlanilha} style={styles.inputArquivo} />
+          </label>
+
+          {totalCodigosPlanilha != null && (
+            <p style={styles.vazio}>{totalCodigosPlanilha} códigos reconhecidos no arquivo.</p>
+          )}
+
+          {statusPlanilha && (
+            <p style={statusPlanilha.tipo === 'erro' ? styles.erro : styles.sucesso}>{statusPlanilha.texto}</p>
+          )}
+
+          <button
+            type="button"
+            onClick={handleEnviarPlanilha}
+            style={styles.botaoSecundario}
+            disabled={enviandoPlanilha || !arquivoPlanilha}
+          >
+            {enviandoPlanilha ? 'Enviando…' : 'Enviar planilha'}
+          </button>
+
+          {statusRecalculo && (
+            <p style={statusRecalculo.tipo === 'erro' ? styles.erro : styles.sucesso}>{statusRecalculo.texto}</p>
+          )}
+
+          <button
+            type="button"
+            onClick={handleRecalcularCategorias}
+            style={{ ...styles.botaoSecundario, marginTop: '8px' }}
+            disabled={recalculando}
+          >
+            {recalculando ? 'Recalculando…' : 'Recalcular categorias dos produtos já cadastrados'}
+          </button>
+        </div><div style={styles.listaBox}>
           <h2 style={styles.subtitulo}>Vendedores ({vendedores.length})</h2>
 
           <form onSubmit={handleSalvarVendedor} style={styles.formVendedor}>
