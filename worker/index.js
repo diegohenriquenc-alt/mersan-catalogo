@@ -848,13 +848,7 @@ async function handleIrVendedor(request, url, env) {
   }
 }
 async function handleIrVendedorCarrinho(request, url, env) {
-  const vendedorId = url.searchParams.get('vendedor')
-  const itensBrutos = url.searchParams.get('itens')
-  const parcelasEscolhidas = Number(url.searchParams.get('parcelas')) || null
 
-  if (!vendedorId || !itensBrutos) {
-    return new Response('Link inválido.', { status: 400 })
-  }
 
   let itens
   try {
