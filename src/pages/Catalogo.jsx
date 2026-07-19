@@ -218,18 +218,18 @@ export default function Catalogo() {
                       e.currentTarget.src = IMAGEM_PADRAO
                     }}
                   />
-                </div>
-                <button
-  onClick={(e) => {
-    e.preventDefault()
-    adicionarAoCarrinho(p.codigo)
-    setCarrinhoVersao((v) => v + 1)
-  }}
-  style={styles.botaoCarrinho}
-  aria-label="Adicionar ao carrinho"
->
-  {estaNoCarrinho(p.codigo) ? '✅' : '🛒'}
-</button>
+<button
+              onClick={(e) => {
+                e.preventDefault()
+                adicionarAoCarrinho(p.codigo)
+                setCarrinhoVersao((v) => v + 1)
+              }}
+              style={styles.botaoCarrinho}
+              aria-label="Adicionar ao carrinho"
+            >
+              {estaNoCarrinho(p.codigo) ? '✅' : '🛒'}
+            </button>
+          </div>
 
                 <div style={styles.cardInfo}>
                   {marca && <span style={styles.marcaEtiqueta}>{marca}</span>}
