@@ -718,7 +718,7 @@ function PainelFotos({ senha }) {
 
           <label style={styles.label}>
             Arquivo da planilha (.csv)
-            <input type="file" accept=".csv" onChange={handleArquivoPlanilha} style={styles.inputArquivo} />
+            <input type="file" accept=".csv,text/csv,text/plain,application/vnd.ms-excel" onChange={handleArquivoPlanilha} style={styles.inputArquivo} />
           </label>
 
           {totalCodigosPlanilha != null && (
