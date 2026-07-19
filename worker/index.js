@@ -442,6 +442,14 @@ async function handleAdminLogin(request, env) {
   if (!autenticado(request, env)) {
     return jsonResponse({ error: 'Senha incorreta.' }, 401)
   }
+  return jsonResponse({ ok: true })
+}
+
+async function handleAdminUploadFoto(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
   const form = await request.formData()
   const codigo = form.get('codigo')
   const arquivo = form.get('arquivo')
@@ -464,14 +472,6 @@ async function handleAdminLogin(request, env) {
   // do formulário). Se não estiver na planilha, usa a escolha manual.
   const mapaCategorias = await getCategoriasPlanilha(env)
   const categoria = mapaCategorias[chave] || categoriaManual
-
-  await env.FOTOS.put(chave, bytes, {
-    metadata: {
-      contentType: arquivo.type || 'image/jpeg',
-      tamanho: bytes.byteLength,
-      categoria
-    }
-  })
 
   await env.FOTOS.put(chave, bytes, {
     metadata: {
