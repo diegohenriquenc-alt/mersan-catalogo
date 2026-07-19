@@ -913,9 +913,9 @@ async function handleIrVendedorCarrinho(request, url, env) {
   const linkSelecao = `${url.origin}/selecao/${idSelecao}`
 
   const linhas = [
-    '🛍️ Tenho interesse nestes produtos da Mersan Calçados.',
+    '\u{1F6CD}\u{FE0F} Tenho interesse nestes produtos da Mersan Calçados.',
     '',
-    `📦 Itens selecionados: ${itensDetalhados.length}`,
+    `\u{1F4E6} Itens selecionados: ${itensDetalhados.length}`,
     ''
   ]
 
@@ -928,7 +928,7 @@ async function handleIrVendedorCarrinho(request, url, env) {
   linhas.push('')
 
   if (total > 0) {
-    linhas.push(`💰 Total: R$ ${total.toFixed(2).replace('.', ',')}`)
+    linhas.push(`\u{1F4B0} Total: R$ ${total.toFixed(2).replace('.', ',')}`)
 
     const maxParcelas = Math.min(MAX_PARCELAS, Math.max(1, Math.floor(total / PARCELA_MINIMA)))
     const parcelasFinal =
@@ -943,7 +943,7 @@ async function handleIrVendedorCarrinho(request, url, env) {
     linhas.push('')
   }
 
-  linhas.push('🔗 Ver minha seleção:')
+  linhas.push('\u{1F517} Ver minha seleção:')
   linhas.push(linkSelecao)
   linhas.push('')
   linhas.push('Gostaria de mais informações.')
