@@ -474,6 +474,23 @@ badgeFavoritos: {
   cursor: 'pointer',
   padding: 0
 },
+  botaoCarrinho: {
+  position: 'absolute',
+  bottom: '6px',
+  right: '6px',
+  background: '#ffffff',
+  border: 'none',
+  borderRadius: '999px',
+  width: '32px',
+  height: '32px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontSize: '16px',
+  boxShadow: '0 1px 3px rgba(20,20,26,0.15)',
+  cursor: 'pointer',
+  padding: 0
+},
   foto: {
     width: '100%',
     height: '100%',
