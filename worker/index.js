@@ -94,6 +94,14 @@ export default {
       return handleAdminExcluirVendedor(request, url, env)
     }
 
+    if (url.pathname === '/api/admin/planilha-generos' && request.method === 'POST') {
+      return handleAdminSalvarPlanilhaGeneros(request, env)
+    }
+
+    if (url.pathname === '/api/admin/recalcular-categorias' && request.method === 'POST') {
+      return handleAdminRecalcularCategorias(request, env)
+    }
+
     if (url.pathname === '/ir-vendedor' && request.method === 'GET') {
       return handleIrVendedor(request, url, env)
     }
@@ -434,18 +442,10 @@ async function handleAdminLogin(request, env) {
   if (!autenticado(request, env)) {
     return jsonResponse({ error: 'Senha incorreta.' }, 401)
   }
-  return jsonResponse({ ok: true })
-}
-
-async function handleAdminUploadFoto(request, env) {
-  if (!autenticado(request, env)) {
-    return jsonResponse({ error: 'Senha incorreta.' }, 401)
-  }
-
   const form = await request.formData()
   const codigo = form.get('codigo')
   const arquivo = form.get('arquivo')
-  const categoria = form.get('categoria') || ''
+  const categoriaManual = form.get('categoria') || ''
 
   if (!codigo || !arquivo) {
     return jsonResponse({ error: 'Envie "codigo" e "arquivo".' }, 400)
@@ -458,6 +458,20 @@ async function handleAdminUploadFoto(request, env) {
   if (bytes.byteLength > 24 * 1024 * 1024) {
     return jsonResponse({ error: 'Arquivo grande demais (máximo 24MB).' }, 400)
   }
+
+  // Se o código bipado já está na planilha de gêneros carregada, a
+  // categoria vem automática de lá (tem prioridade sobre a escolha manual
+  // do formulário). Se não estiver na planilha, usa a escolha manual.
+  const mapaCategorias = await getCategoriasPlanilha(env)
+  const categoria = mapaCategorias[chave] || categoriaManual
+
+  await env.FOTOS.put(chave, bytes, {
+    metadata: {
+      contentType: arquivo.type || 'image/jpeg',
+      tamanho: bytes.byteLength,
+      categoria
+    }
+  })
 
   await env.FOTOS.put(chave, bytes, {
     metadata: {
@@ -681,19 +695,117 @@ async function handleAdminSalvarVendedor(request, env) {
     return jsonResponse({ error: 'Envie "nome" e "whatsapp".' }, 400)
   }
 
-  const lista = await getVendedores(env)
-  const id = corpo?.id || crypto.randomUUID()
-  const existente = lista.findIndex((v) => v.id === id)
-  const registro = { id, nome, whatsapp }
-
-  if (existente >= 0) {
-    lista[existente] = registro
-  } else {
-    lista.push(registro)
+  async function handleAdminExcluirVendedor(request, url, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
   }
 
-  await salvarVendedores(env, lista)
-  return jsonResponse({ ok: true, vendedor: registro })
+  const id = url.searchParams.get('id')
+  if (!id) {
+    return jsonResponse({ error: 'Parâmetro "id" é obrigatório.' }, 400)
+  }
+
+  const lista = await getVendedores(env)
+  const nova = lista.filter((v) => v.id !== id)
+  await salvarVendedores(env, nova)
+  return jsonResponse({ ok: true })
+}
+
+// ---------- Categorias por planilha de gênero/faixa etária ----------
+// O navegador já manda o mapa PRONTO (código -> categoria), calculado a
+// partir da planilha que a loja baixa do sistema de estoque. Aqui só
+// guardamos esse mapa inteiro como UM bloco único no KV — não como um
+// item por código — porque o plano gratuito do Cloudflare só permite 1.000
+// gravações por dia; se cada código virasse uma gravação, planilhas de
+// dezenas de milhares de itens estourariam esse limite na hora.
+
+const CATEGORIAS_PLANILHA_CHAVE = '_categorias_planilha'
+
+async function getCategoriasPlanilha(env) {
+  const bruto = await env.FOTOS.get(CATEGORIAS_PLANILHA_CHAVE)
+  if (!bruto) return {}
+  try {
+    const mapa = JSON.parse(bruto)
+    return mapa && typeof mapa === 'object' ? mapa : {}
+  } catch {
+    return {}
+  }
+}
+
+async function salvarCategoriasPlanilha(env, mapa) {
+  await env.FOTOS.put(CATEGORIAS_PLANILHA_CHAVE, JSON.stringify(mapa))
+}
+
+// Substitui o mapa inteiro a cada envio — a loja sempre manda a planilha
+// completa (não só os itens novos), então não há necessidade de mesclar
+// com o que já existia; a versão nova já é a fonte de verdade completa.
+async function handleAdminSalvarPlanilhaGeneros(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const corpo = await request.json().catch(() => null)
+  const mapa = corpo?.mapa
+
+  if (!mapa || typeof mapa !== 'object') {
+    return jsonResponse({ error: 'Envie "mapa" (código -> categoria).' }, 400)
+  }
+
+  await salvarCategoriasPlanilha(env, mapa)
+  return jsonResponse({ ok: true, totalCodigos: Object.keys(mapa).length })
+}
+
+// Aplica a planilha já carregada em cima dos produtos que JÁ estão
+// cadastrados (fotos existentes), sem precisar recadastrar nada. Só
+// reescreve a foto (mesmos bytes, metadata nova) quando a categoria
+// realmente muda — evita gravações desnecessárias no KV.
+async function handleAdminRecalcularCategorias(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const mapa = await getCategoriasPlanilha(env)
+  const listagem = await env.FOTOS.list({ limit: 200 })
+  const fotos = listagem.keys.filter(
+    (k) =>
+      k.name !== VENDEDORES_CHAVE &&
+      k.name !== CATALOGO_CACHE_CHAVE &&
+      k.name !== CATALOGO_CURSOR_CHAVE &&
+      k.name !== CATEGORIAS_PLANILHA_CHAVE &&
+      !k.name.startsWith('_catalogo') &&
+      !k.name.startsWith(SELECOES_PREFIXO)
+  )
+
+  let atualizados = 0
+  let encontrados = 0
+
+  for (const chaveInfo of fotos) {
+    const categoriaNova = mapa[chaveInfo.name]
+    if (!categoriaNova) continue
+    encontrados++
+
+    const categoriaAtual = chaveInfo.metadata?.categoria || ''
+    if (categoriaAtual === categoriaNova) continue
+
+    const resultado = await env.FOTOS.getWithMetadata(chaveInfo.name, 'arrayBuffer')
+    if (!resultado || !resultado.value) continue
+
+    await env.FOTOS.put(chaveInfo.name, resultado.value, {
+      metadata: {
+        contentType: resultado.metadata?.contentType || 'image/jpeg',
+        tamanho: resultado.metadata?.tamanho || resultado.value.byteLength,
+        categoria: categoriaNova
+      }
+    })
+    atualizados++
+  }
+
+  return jsonResponse({
+    ok: true,
+    totalFotos: fotos.length,
+    encontradosNaPlanilha: encontrados,
+    atualizados
+  })
 }
 
 async function handleAdminExcluirVendedor(request, url, env) {
