@@ -916,20 +916,6 @@ async function handleIrVendedorCarrinho(request, url, env) {
     indice++
   }
 
-  if (total > 0) {
-    linhas.push(`Total: R$ ${total.toFixed(2).replace('.', ',')}`)
-
-    const maxParcelas = Math.min(MAX_PARCELAS, Math.max(1, Math.floor(total / PARCELA_MINIMA)))
-    const parcelasFinal =
-      parcelasEscolhidas && parcelasEscolhidas >= 1 && parcelasEscolhidas <= maxParcelas
-        ? parcelasEscolhidas
-        : maxParcelas
-
-    if (parcelasFinal > 1) {
-      const valorParcela = (total / parcelasFinal).toFixed(2).replace('.', ',')
-      linhas.push(`Parcelamento: ${parcelasFinal}x de R$ ${valorParcela}`)
-    }
-    linhas.push('')
 async function handleIrVendedorCarrinho(request, url, env) {
   const vendedorId = url.searchParams.get('vendedor')
   const itensBrutos = url.searchParams.get('itens')
