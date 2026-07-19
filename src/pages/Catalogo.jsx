@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ehFavorito, alternarFavorito } from '../utils/favoritos.js'
+import { ehFavorito, alternarFavorito, contarFavoritos } from '../utils/favoritos.js'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
@@ -143,6 +143,11 @@ export default function Catalogo() {
           >
             <IconeBusca />
           </button>
+
+          <Link to="/favoritos" style={styles.iconeBotaoFavorito} aria-label="Meus favoritos">
+            <span>❤️</span>
+            <span style={styles.badgeFavoritos}>{contarFavoritos()}</span>
+          </Link>
         </div>
 
         <Link to="/" style={styles.marca}>
@@ -328,6 +333,27 @@ const styles = {
     display: 'flex',
     alignItems: 'center'
   },
+  iconeBotaoFavorito: {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '4px',
+  textDecoration: 'none',
+  color: '#14141a',
+  padding: '6px'
+},
+badgeFavoritos: {
+  background: '#e4002b',
+  color: '#fff',
+  borderRadius: '999px',
+  fontSize: '11px',
+  minWidth: '16px',
+  height: '16px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '0 4px',
+  fontWeight: 700
+},
   marca: {
     display: 'flex',
     flexDirection: 'column',
