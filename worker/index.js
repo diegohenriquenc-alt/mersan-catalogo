@@ -474,10 +474,9 @@ async function handleAdminUploadFoto(request, env) {
   let categoria = categoriaManual
   try {
     const dadosProduto = await buscarDadosProdutoMersan(chave)
-    const mapaCategorias = await getCategoriasPlanilha(env)
-    if (dadosProduto.codigoSku && mapaCategorias[String(dadosProduto.codigoSku)]) {
-      categoria = mapaCategorias[String(dadosProduto.codigoSku)]
-    }
+    const indice = indexarCategoriasPorCodigo(await getCategoriasPlanilha(env))
+    const daPlanilha = indice[normalizarCodigoInterno(dadosProduto.codigoSku)]
+    if (daPlanilha) categoria = daPlanilha
   } catch {
     // Sem dados da Mersan agora: mantém a categoria escolhida manualmente.
   }
