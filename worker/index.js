@@ -978,29 +978,87 @@ async function handleIrVendedor(request, url, env) {
       linhas.push(`Valor: R$ ${preco.toFixed(2).replace('.', ',')}`)
     }
 
+async function handleIrVendedor(request, url, env) {
+  const vendedorId = url.searchParams.get('vendedor')
+  const codigo = url.searchParams.get('codigo')
+  const tamanho = url.searchParams.get('tamanho')
+  const parcelasEscolhidas = Number(url.searchParams.get('parcelas')) || null
+
+  if (!vendedorId || !codigo) {
+    return new Response('Link inválido.', { status: 400 })
+  }
+
+  const lista = await getVendedores(env)
+  const vendedor = lista.find((v) => v.id === vendedorId)
+
+  if (!vendedor) {
+    return new Response('Vendedor não encontrado. Peça para recadastrar esse vendedor no painel admin.', { status: 404 })
+  }
+
+  const numeroValido = /^\d{10,15}$/.test(vendedor.whatsapp || '')
+  if (!numeroValido) {
+    return new Response(
+      `O WhatsApp cadastrado para "${vendedor.nome}" está inválido ("${vendedor.whatsapp || 'vazio'}"). Corrija no painel admin (só números, com DDI e DDD, ex: 5511999999999).`,
+      { status: 500 }
+    )
+  }
+
+  let referencia = codigo
+  let preco = null
+  try {
+    const controlador = new AbortController()
+    const tempoLimite = setTimeout(() => controlador.abort(), 4000)
+    const dados = await buscarDadosProdutoMersan(codigo, controlador.signal)
+    clearTimeout(tempoLimite)
+    referencia = dados.referencia || codigo
+    preco = dados.preco
+  } catch {
+    // Sem dados do produto (demorou, ou deu erro): segue só com o código.
+  }
+
+  // Usa a mesma "seleção" curta do carrinho, mesmo pra 1 produto só — assim
+  // a mensagem do WhatsApp fica sempre no formato reduzido, com link pra
+  // página de seleção (que já mostra foto, nome e preço bonitinhos), em
+  // vez do formato antigo com todos os detalhes escritos na mensagem.
+  const idSelecao = await salvarSelecao(env, [{ codigo, tamanho }])
+  const linkSelecao = `${url.origin}/selecao/${idSelecao}`
+
+  const linhas = [
+    '\u{1F6CD}\u{FE0F} Tenho interesse neste produto da Mersan Calçados.',
+    '',
+    '\u{1F4E6} Itens selecionados: 1',
+    ''
+  ]
+
+  const partes = [`Ref. ${referenciaParaCliente(referencia)}`]
+  if (tamanho) partes.push(`Tam. ${tamanho}`)
+  linhas.push(`• ${partes.join(' | ')}`)
+  linhas.push('')
+
+  if (preco != null) {
+    linhas.push(`\u{1F4B0} Total: R$ ${preco.toFixed(2).replace('.', ',')}`)
+
     const maxParcelas = Math.min(MAX_PARCELAS, Math.max(1, Math.floor(preco / PARCELA_MINIMA)))
-    // Prioriza o que o cliente escolheu no dropdown; se por algum motivo
-    // não vier (link antigo, por exemplo), cai no cálculo automático.
     const parcelasFinal =
       parcelasEscolhidas && parcelasEscolhidas >= 1 && parcelasEscolhidas <= maxParcelas
         ? parcelasEscolhidas
         : maxParcelas
+
     if (parcelasFinal > 1) {
       const valorParcela = (preco / parcelasFinal).toFixed(2).replace('.', ',')
       linhas.push(`Parcelamento: ${parcelasFinal}x de R$ ${valorParcela}`)
     }
+    linhas.push('')
   }
 
-  linhas.push(`Link: ${linkProduto}`)
+  linhas.push('\u{1F517} Ver minha seleção:')
+  linhas.push(linkSelecao)
   linhas.push('')
   linhas.push('Gostaria de mais informações.')
 
   const mensagem = linhas.join('\n')
   const linkWhatsApp = `https://wa.me/${vendedor.whatsapp}?text=${encodeURIComponent(mensagem)}`
 
-  // A partir daqui o número já foi validado e a mensagem já foi codificada
-  // corretamente, então Response.redirect não deveria falhar. Ainda assim,
-  // qualquer erro cai na página com botão manual — nunca em branco.
   try {
     return Response.redirect(linkWhatsApp, 302)
   } catch {
