@@ -733,8 +733,8 @@ async function handleAdminListarFotos(request, env) {
       modificadoEm: k.metadata?.atualizadoEm || null
     }))
 
-  
-}return jsonResponse({ fotos, truncado: false })
+  return jsonResponse({ fotos, truncado: false })
+}
 
 // ---------- Vitrine pública (lista de fotos, sem senha) ----------
 
