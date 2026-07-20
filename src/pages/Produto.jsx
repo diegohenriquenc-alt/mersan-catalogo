@@ -424,7 +424,7 @@ const styles = {
     // da TELA (vh) em vez da largura, a foto fica proporcionalmente
     // menor em telas normais, sobrando espaço pra numeração e sugestões
     // aparecerem sem precisar rolar tanto.
-    height: 'clamp(200px, 34vh, 320px)',
+    height: 'clamp(170px, 27vh, 260px)',
     background: '#ffffff'
   },
   foto: {
