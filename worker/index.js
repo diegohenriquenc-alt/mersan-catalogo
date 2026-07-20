@@ -525,18 +525,25 @@ async function handleAdminUploadFoto(request, env) {
     return jsonResponse({ error: 'Arquivo grande demais (máximo 24MB).' }, 400)
   }
 
-// A planilha usa o SKU interno da Mersan como código, não o código de
+  // A planilha usa o SKU interno da Mersan como código, não o código de
   // barras usado aqui pra guardar a foto — então consultamos a Mersan pra
-  // saber o SKU deste produto antes de cruzar com a planilha. Se não
-  // encontrar, usa a escolha manual do formulário.
+  // saber o SKU deste produto antes de cruzar com a planilha. Aproveitamos
+  // essa mesma consulta pra já deixar o produto pronto no catálogo na
+  // hora, sem esperar o próximo ciclo de aquecimento (que roda a cada 25
+  // minutos, em lotes — sem isso, um produto novo podia demorar até esse
+  // tanto de tempo pra aparecer na vitrine).
   let categoria = categoriaManual
+  let dadosProduto = null
   try {
-    const dadosProduto = await buscarDadosProdutoMersan(chave)
+    dadosProduto = await buscarDadosProdutoMersan(chave)
     const indice = indexarCategoriasPorCodigo(await getCategoriasPlanilha(env))
     const daPlanilha = indice[normalizarCodigoInterno(dadosProduto.codigoSku)]
     if (daPlanilha) categoria = daPlanilha
   } catch {
     // Sem dados da Mersan agora: mantém a categoria escolhida manualmente.
+    // A foto é salva normalmente; o produto só não entra "na hora" no
+    // catálogo — o próximo ciclo de aquecimento resolve isso do jeito
+    // que já funcionava antes.
   }
 
   await env.FOTOS.put(chave, bytes, {
@@ -546,6 +553,29 @@ async function handleAdminUploadFoto(request, env) {
       categoria
     }
   })
+
+  if (dadosProduto && dadosProduto.referencia && !dadosProduto.referencia.includes('não encontrado')) {
+    try {
+      const estoque = await buscarEstoqueMersan(dadosProduto.referencia)
+      const estoqueTotal = estoque.reduce((soma, i) => soma + (i.pares || 0), 0)
+      if (estoqueTotal > 0) {
+        await upsertCatalogoNovo(env, {
+          codigo: chave,
+          categoria,
+          codigoSku: dadosProduto.codigoSku,
+          promocao: dadosProduto.emPromocao,
+          nome: dadosProduto.nome,
+          tamanho: dadosProduto.tamanho,
+          preco: dadosProduto.preco,
+          precoOriginal: dadosProduto.precoOriginal,
+          estoqueTotal
+        })
+      }
+    } catch {
+      // Sem estoque agora: a foto já foi salva de qualquer forma, e o
+      // produto entra no catálogo no próximo ciclo de aquecimento normal.
+    }
+  }
 
   return jsonResponse({ ok: true, codigo: chave })
 }
@@ -1005,9 +1035,9 @@ async function handleIrVendedor(request, url, env) {
   const linkSelecao = `${url.origin}/selecao/${idSelecao}`
 
   const linhas = [
-    'Tenho interesse neste produto da Mersan Calçados.',
+    '\u{1F6CD}\u{FE0F} Tenho interesse neste produto da Mersan Calçados.',
     '',
-    'Itens selecionados: 1',
+    '\u{1F4E6} Itens selecionados: 1',
     ''
   ]
 
@@ -1017,7 +1047,7 @@ async function handleIrVendedor(request, url, env) {
   linhas.push('')
 
   if (preco != null) {
-    linhas.push(`Total: R$ ${preco.toFixed(2).replace('.', ',')}`)
+    linhas.push(`\u{1F4B0} Total: R$ ${preco.toFixed(2).replace('.', ',')}`)
 
     const maxParcelas = Math.min(MAX_PARCELAS, Math.max(1, Math.floor(preco / PARCELA_MINIMA)))
     const parcelasFinal =
@@ -1032,7 +1062,7 @@ async function handleIrVendedor(request, url, env) {
     linhas.push('')
   }
 
-  linhas.push('Ver minha seleção:')
+  linhas.push('\u{1F517} Ver minha seleção:')
   linhas.push(linkSelecao)
   linhas.push('')
   linhas.push('Gostaria de mais informações.')
@@ -1112,9 +1142,9 @@ async function handleIrVendedorCarrinho(request, url, env) {
   const linkSelecao = `${url.origin}/selecao/${idSelecao}`
 
   const linhas = [
-    'Tenho interesse nestes produtos da Mersan Calçados.',
+    '\u{1F6CD}\u{FE0F} Tenho interesse nestes produtos da Mersan Calçados.',
     '',
-    `Itens selecionados: ${itensDetalhados.length}`,
+    `\u{1F4E6} Itens selecionados: ${itensDetalhados.length}`,
     ''
   ]
 
@@ -1127,7 +1157,7 @@ async function handleIrVendedorCarrinho(request, url, env) {
   linhas.push('')
 
   if (total > 0) {
-    linhas.push(`Total: R$ ${total.toFixed(2).replace('.', ',')}`)
+    linhas.push(`\u{1F4B0} Total: R$ ${total.toFixed(2).replace('.', ',')}`)
 
     const maxParcelas = Math.min(MAX_PARCELAS, Math.max(1, Math.floor(total / PARCELA_MINIMA)))
     const parcelasFinal =
@@ -1142,7 +1172,7 @@ async function handleIrVendedorCarrinho(request, url, env) {
     linhas.push('')
   }
 
-  linhas.push('Ver minha seleção:')
+  linhas.push('\u{1F517} Ver minha seleção:')
   linhas.push(linkSelecao)
   linhas.push('')
   linhas.push('Gostaria de mais informações.')
@@ -1180,6 +1210,33 @@ const CATALOGO_CACHE_CHAVE = '_catalogo_pronto'
 const CATALOGO_CURSOR_CHAVE = '_catalogo_cursor'
 const CATALOGO_LOTE_TAMANHO = 10
 const CATALOGO_LOTE_PREFIXO = '_catalogo_lote_'
+const CATALOGO_NOVOS_CHAVE = '_catalogo_novos'
+
+// Produtos recém-cadastrados que ainda não foram "varridos" por nenhum
+// lote do aquecimento automático. Fica numa gaveta própria, separada dos
+// lotes, pra não interferir no ciclo normal — só existe pra cobrir a
+// lacuna entre "acabei de cadastrar" e "o aquecimento chegou nesse item".
+async function getCatalogoNovos(env) {
+  const bruto = await env.FOTOS.get(CATALOGO_NOVOS_CHAVE)
+  if (!bruto) return []
+  try {
+    const lista = JSON.parse(bruto)
+    return Array.isArray(lista) ? lista : []
+  } catch {
+    return []
+  }
+}
+
+async function upsertCatalogoNovo(env, item) {
+  const lista = await getCatalogoNovos(env)
+  const semEsse = lista.filter((p) => p.codigo !== item.codigo)
+  semEsse.push(item)
+  // Limite de segurança: nunca deixa crescer sem parar. No dia a dia
+  // isso fica vazio quase sempre, já que o aquecimento absorve os itens
+  // em poucos minutos e limpa a lista sozinho.
+  const limitada = semEsse.slice(-100)
+  await env.FOTOS.put(CATALOGO_NOVOS_CHAVE, JSON.stringify(limitada))
+}
 
 // Cada lote escreve numa chave PRÓPRIA (_catalogo_lote_0, _catalogo_lote_1,
 // ...), nunca lendo nem misturando com o que já existia. Isso elimina de
@@ -1310,22 +1367,31 @@ return {
 // um guardado na própria gaveta) numa lista só, pra devolver pro cliente.
 async function handleCatalogoPronto(env, ctx) {
   const indiceBruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
-  if (!indiceBruto) {
-    return jsonResponse({ produtos: [] }, 200)
-  }
+  const totalLotes = indiceBruto ? JSON.parse(indiceBruto).totalLotes || 0 : 0
 
-  const { totalLotes } = JSON.parse(indiceBruto)
-  if (!totalLotes) {
-    return jsonResponse({ produtos: [] }, 200)
-  }
-
-  const lotes = await Promise.all(
-    Array.from({ length: totalLotes }, (_, i) => env.FOTOS.get(`${CATALOGO_LOTE_PREFIXO}${i}`))
-  )
+  const lotes = totalLotes
+    ? await Promise.all(
+        Array.from({ length: totalLotes }, (_, i) => env.FOTOS.get(`${CATALOGO_LOTE_PREFIXO}${i}`))
+      )
+    : []
 
   const produtos = lotes.flatMap((l) => (l ? JSON.parse(l) : []))
 
-  return jsonResponse({ produtos }, 200, {
+  // Produtos cadastrados há pouco tempo, que ainda não foram varridos por
+  // nenhum lote do aquecimento, entram aqui na hora — sem isso, um
+  // produto novo só aparecia no catálogo depois de até 25 minutos.
+  const novos = await getCatalogoNovos(env)
+  const codigosNoCatalogo = new Set(produtos.map((p) => p.codigo))
+  const novosAindaFaltando = novos.filter((n) => !codigosNoCatalogo.has(n.codigo))
+
+  // Assim que um "novo" aparece de verdade num lote (o aquecimento
+  // normal chegou nele), ele não precisa mais ficar guardado aqui —
+  // limpa em segundo plano, sem atrasar a resposta pro cliente.
+  if (novosAindaFaltando.length !== novos.length) {
+    ctx.waitUntil(env.FOTOS.put(CATALOGO_NOVOS_CHAVE, JSON.stringify(novosAindaFaltando)))
+  }
+
+  return jsonResponse({ produtos: [...produtos, ...novosAindaFaltando] }, 200, {
     'Cache-Control': 'public, max-age=120'
   })
 }
