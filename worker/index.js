@@ -1005,9 +1005,9 @@ async function handleIrVendedor(request, url, env) {
   const linkSelecao = `${url.origin}/selecao/${idSelecao}`
 
   const linhas = [
-    '\u{1F6CD}\u{FE0F} Tenho interesse neste produto da Mersan Calçados.',
+    'Tenho interesse neste produto da Mersan Calçados.',
     '',
-    '\u{1F4E6} Itens selecionados: 1',
+    'Itens selecionados: 1',
     ''
   ]
 
