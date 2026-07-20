@@ -26,6 +26,10 @@ export default {
       return handleProdutoPage(request, url, env, ctx)
     }
 
+    if (url.pathname.startsWith('/selecao/')) {
+      return handleSelecaoPage(request, url, env, ctx)
+    }
+
     if (url.pathname === '/api/produto') {
       return handleProduto(request, url, ctx)
     }
@@ -395,6 +399,60 @@ function escapeHtml(str) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;')
+}
+
+// Prévia (Open Graph) da página de "minha seleção" (1 ou mais produtos
+// escolhidos, seja pelo carrinho ou pelo botão comprar de um produto só).
+// Sem essa função, o link caía direto no site estático (React), que só
+// tem as meta tags genéricas — por isso a prévia do WhatsApp tinha
+// parado de mostrar a foto do produto.
+async function handleSelecaoPage(request, url, env, ctx) {
+  const id = url.pathname.replace('/selecao/', '').split('/')[0]
+
+  const baseRequest = new Request(new URL('/', request.url), request)
+  const htmlResp = await env.ASSETS.fetch(baseRequest)
+  let html = await htmlResp.text()
+
+  if (!id) {
+    return new Response(html, htmlResp)
+  }
+
+  const selecao = await getSelecao(env, id)
+  if (!selecao || !Array.isArray(selecao.itens) || selecao.itens.length === 0) {
+    return new Response(html, htmlResp)
+  }
+
+  const quantidade = selecao.itens.length
+  const titulo =
+    quantidade === 1
+      ? 'Minha seleção (1 produto) - Mersan Calçados'
+      : `Minha seleção (${quantidade} produtos) - Mersan Calçados`
+  const descricao = 'Mersan Calçados • Loja 261'
+  const chaveFoto = normalizarCodigo(selecao.itens[0].codigo)
+  const imagemUrl = `${url.origin}/produto-foto/${encodeURIComponent(chaveFoto)}`
+
+  html = html
+    .replace(
+      '<title>Mersan Calçados - Catálogo Loja 261</title>',
+      `<title>${escapeHtml(titulo)}</title>`
+    )
+    .replaceAll(
+      'content="Mersan Calçados • Loja 261"',
+      `content="${escapeHtml(titulo)}"`
+    )
+    .replaceAll(
+      'content="Consulte produtos e estoque da Mersan Calçados - Loja 261"',
+      `content="${escapeHtml(descricao)}"`
+    )
+    .replace(
+      '<meta property="og:image" content="/icons/icon-512.svg" />',
+      `<meta property="og:image" content="${imagemUrl}" />\n    <meta property="og:image:type" content="image/jpeg" />`
+    )
+
+  return new Response(html, {
+    status: 200,
+    headers: { 'Content-Type': 'text/html; charset=UTF-8' }
+  })
 }
 
 // ---------- Fotos (Etapa 3) ----------
