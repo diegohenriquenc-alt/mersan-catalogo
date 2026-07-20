@@ -1017,7 +1017,7 @@ async function handleIrVendedor(request, url, env) {
   linhas.push('')
 
   if (preco != null) {
-    linhas.push(`\u{1F4B0} Total: R$ ${preco.toFixed(2).replace('.', ',')}`)
+    linhas.push(`Total: R$ ${preco.toFixed(2).replace('.', ',')}`)
 
     const maxParcelas = Math.min(MAX_PARCELAS, Math.max(1, Math.floor(preco / PARCELA_MINIMA)))
     const parcelasFinal =
@@ -1032,7 +1032,7 @@ async function handleIrVendedor(request, url, env) {
     linhas.push('')
   }
 
-  linhas.push('\u{1F517} Ver minha seleção:')
+  linhas.push('Ver minha seleção:')
   linhas.push(linkSelecao)
   linhas.push('')
   linhas.push('Gostaria de mais informações.')
