@@ -729,6 +729,24 @@ async function handleAdminSalvarVendedor(request, env) {
 
 const CATEGORIAS_PLANILHA_CHAVE = '_categorias_planilha'
 
+// O "Código" da planilha e o codigoSku da Mersan são o mesmo identificador
+// interno, mas podem chegar com formatações diferentes (texto x número,
+// espaços, zeros à esquerda, caracteres invisíveis). Normalizamos os dois
+// lados antes de comparar — nunca comparamos por nome ou descrição.
+function normalizarCodigoInterno(valor) {
+  const digitos = String(valor ?? '').replace(/\D/g, '')
+  return digitos.replace(/^0+/, '') || digitos
+}
+
+function indexarCategoriasPorCodigo(mapa) {
+  const indice = {}
+  for (const codigo of Object.keys(mapa || {})) {
+    const chave = normalizarCodigoInterno(codigo)
+    if (chave) indice[chave] = mapa[codigo]
+  }
+  return indice
+}
+
 async function getCategoriasPlanilha(env) {
   const bruto = await env.FOTOS.get(CATEGORIAS_PLANILHA_CHAVE)
   if (!bruto) return {}
