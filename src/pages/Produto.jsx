@@ -418,7 +418,13 @@ const styles = {
   fotoWrapper: {
     position: 'relative',
     width: '100%',
-    aspectRatio: '1 / 1',
+    // Antes era aspectRatio 1/1 com width 100%, o que fazia a foto ficar
+    // tão alta quanto a tela é larga — em celulares altos e estreitos
+    // isso comia quase metade da tela. Usando altura baseada na altura
+    // da TELA (vh) em vez da largura, a foto fica proporcionalmente
+    // menor em telas normais, sobrando espaço pra numeração e sugestões
+    // aparecerem sem precisar rolar tanto.
+    height: 'clamp(200px, 34vh, 320px)',
     background: '#ffffff'
   },
   foto: {
