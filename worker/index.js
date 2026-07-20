@@ -375,7 +375,7 @@ async function handleProdutoPage(request, url, env, ctx) {
       `content="${escapeHtml(descricao)}"`
     )
     .replace(
-      '<meta property="og:image" content="/icons/icon-512.svg" />',
+      '<meta property="og:image" content="/og-image.png" />',
       `<meta property="og:image" content="${imagemUrl}" />\n    <meta property="og:image:type" content="image/jpeg" />`
     )
 
@@ -445,7 +445,7 @@ async function handleSelecaoPage(request, url, env, ctx) {
       `content="${escapeHtml(descricao)}"`
     )
     .replace(
-      '<meta property="og:image" content="/icons/icon-512.svg" />',
+      '<meta property="og:image" content="/og-image.png" />',
       `<meta property="og:image" content="${imagemUrl}" />\n    <meta property="og:image:type" content="image/jpeg" />`
     )
 
