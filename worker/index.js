@@ -1173,11 +1173,38 @@ async function preAquecerCatalogoLote(env) {
   const cache = caches.default
   const origem = 'https://mersan-catalogo.diegohenriquenc.workers.dev'
 
+  const indiceCategorias = indexarCategoriasPorCodigo(await getCategoriasPlanilha(env))
+
   const erros = []
   const resultados = await Promise.all(
     lote.map(async (item) => {
       try {
         const dados = await buscarDadosProdutoMersan(item.codigo)
+
+        // Assim que sabemos o código interno do produto, já aplicamos a
+        // categoria da planilha aqui mesmo — inclusive gravando na foto.
+        // Sem isso, a categoria só entrava no catálogo depois de um ciclo
+        // extra de aquecimento, e produtos ficavam sem categoria à toa.
+        let categoriaItem = item.categoria
+        const categoriaPlanilha = indiceCategorias[normalizarCodigoInterno(dados.codigoSku)]
+        if (categoriaPlanilha && categoriaPlanilha !== categoriaItem) {
+          categoriaItem = categoriaPlanilha
+          try {
+            const fotoAtual = await env.FOTOS.getWithMetadata(item.codigo, 'arrayBuffer')
+            if (fotoAtual && fotoAtual.value) {
+              await env.FOTOS.put(item.codigo, fotoAtual.value, {
+                metadata: {
+                  contentType: fotoAtual.metadata?.contentType || 'image/jpeg',
+                  tamanho: fotoAtual.metadata?.tamanho || fotoAtual.value.byteLength,
+                  categoria: categoriaPlanilha
+                }
+              })
+            }
+          } catch {
+            // Se a gravação falhar, o catálogo desta rodada já sai correto
+            // mesmo assim; a próxima rodada tenta gravar de novo.
+          }
+        }
 
         // Aproveita essa mesma consulta pra já deixar pronta a resposta
         // individual do produto (/api/produto) — é a página do produto
