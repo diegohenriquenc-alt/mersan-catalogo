@@ -14,9 +14,26 @@
 
 const MERSAN_BASE = 'https://credito.mersan.co/api/v1'
 const LOJA = 261
-const CACHE_TTL_SECONDS = 90 * 60 // 90 minutos — dá folga pro aquecedor completar um ciclo inteiro mesmo com o catálogo crescendo
+const CACHE_TTL_SECONDS = 5 * 60 // 5 minutos — janela curta pra numeração/estoque nunca ficarem desatualizados por muito tempo (ex: produto vendido na loja física)
 const PARCELA_MINIMA = 29.99
 const MAX_PARCELAS = 10
+
+// env.FOTOS.list() só devolve até 1000 chaves por chamada (e antes o
+// código nem pedia isso — ficava travado em 200). Com o catálogo
+// crescendo (300+ produtos), uma chamada só pode não trazer tudo. Essa
+// função dá a volta em todas as "páginas" até pegar a lista completa,
+// então nenhum produto fica invisível pro site.
+async function listarTodasFotos(env) {
+  let todas = []
+  let cursor = undefined
+  for (let seguranca = 0; seguranca < 20; seguranca++) {
+    const pagina = await env.FOTOS.list({ limit: 1000, cursor })
+    todas = todas.concat(pagina.keys)
+    if (pagina.list_complete || !pagina.cursor) break
+    cursor = pagina.cursor
+  }
+  return todas
+}
 
 export default {
   async fetch(request, env, ctx) {
@@ -679,8 +696,8 @@ async function handleAdminListarFotos(request, env) {
     return jsonResponse({ error: 'Senha incorreta.' }, 401)
   }
 
-  const listagem = await env.FOTOS.list({ limit: 200 })
-  const fotos = listagem.keys
+  const chavesFotos = await listarTodasFotos(env)
+  const fotos = chavesFotos
     .filter((k) => k.name !== VENDEDORES_CHAVE && k.name !== CATALOGO_CACHE_CHAVE && k.name !== CATALOGO_CURSOR_CHAVE)
     .map((k) => ({
       codigo: k.name,
@@ -695,15 +712,15 @@ async function handleAdminListarFotos(request, env) {
 // ---------- Vitrine pública (lista de fotos, sem senha) ----------
 
 async function handleFotosPublicas(env) {
-  const listagem = await env.FOTOS.list({ limit: 200 })
-  const produtos = listagem.keys
+  const chavesFotos = await listarTodasFotos(env)
+  const produtos = chavesFotos
     .filter((k) => k.name !== VENDEDORES_CHAVE && k.name !== CATALOGO_CACHE_CHAVE)
     .map((k) => ({
       codigo: k.name,
       categoria: k.metadata?.categoria || ''
     }))
 
-  return jsonResponse({ produtos, truncado: !listagem.list_complete })
+  return jsonResponse({ produtos, truncado: false })
 }
 
 // ---------- Vendedores ----------
@@ -896,8 +913,8 @@ async function handleAdminRecalcularCategorias(request, env) {
     }
   }
 
-  const listagem = await env.FOTOS.list({ limit: 200 })
-  const fotos = listagem.keys.filter(
+  const chavesFotos = await listarTodasFotos(env)
+  const fotos = chavesFotos.filter(
     (k) =>
       k.name !== VENDEDORES_CHAVE &&
       k.name !== CATALOGO_CACHE_CHAVE &&
@@ -1244,8 +1261,8 @@ async function upsertCatalogoNovo(env, item) {
 // manual, por exemplo) se atropelarem: cada uma mexe só na sua própria
 // gaveta, nunca na do outro.
 async function preAquecerCatalogoLote(env) {
-  const listagem = await env.FOTOS.list({ limit: 200 })
-  const codigos = listagem.keys
+  const chavesFotos = await listarTodasFotos(env)
+  const codigos = chavesFotos
     .filter((k) => k.name !== VENDEDORES_CHAVE && !k.name.startsWith('_catalogo'))
     .map((k) => ({ codigo: k.name, categoria: k.metadata?.categoria || '' }))
 
@@ -1404,8 +1421,8 @@ async function handleCatalogoDebug(env) {
   const cursorBruto = await env.FOTOS.get(CATALOGO_CURSOR_CHAVE)
   const indiceBruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
 
-  const listagem = await env.FOTOS.list({ limit: 200 })
-  const codigos = listagem.keys
+  const chavesFotos = await listarTodasFotos(env)
+  const codigos = chavesFotos
     .filter((k) => k.name !== VENDEDORES_CHAVE && !k.name.startsWith('_catalogo'))
     .map((k) => k.name)
 
