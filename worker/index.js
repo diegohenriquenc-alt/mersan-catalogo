@@ -687,7 +687,34 @@ async function handleAdminExcluirFoto(request, url, env) {
     return jsonResponse({ error: 'Parâmetro "codigo" é obrigatório.' }, 400)
   }
 
-  await env.FOTOS.delete(normalizarCodigo(codigo))
+  const chave = normalizarCodigo(codigo)
+  await env.FOTOS.delete(chave)
+
+  // Tira o produto do catálogo na hora, sem esperar o próximo ciclo de
+  // aquecimento — tanto da gaveta de "recém-cadastrados" (se ele tiver
+  // sido excluído antes mesmo de ser varrido por um lote) quanto de
+  // qualquer lote onde ele já tenha entrado.
+  const novos = await getCatalogoNovos(env)
+  if (novos.some((p) => p.codigo === chave)) {
+    await env.FOTOS.put(CATALOGO_NOVOS_CHAVE, JSON.stringify(novos.filter((p) => p.codigo !== chave)))
+  }
+
+  const indiceBruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
+  const totalLotes = indiceBruto ? JSON.parse(indiceBruto).totalLotes || 0 : 0
+  if (totalLotes > 0) {
+    const lotesBrutos = await Promise.all(
+      Array.from({ length: totalLotes }, (_, i) => env.FOTOS.get(`${CATALOGO_LOTE_PREFIXO}${i}`))
+    )
+    for (let i = 0; i < lotesBrutos.length; i++) {
+      if (!lotesBrutos[i]) continue
+      const lista = JSON.parse(lotesBrutos[i])
+      if (lista.some((p) => p.codigo === chave)) {
+        await env.FOTOS.put(`${CATALOGO_LOTE_PREFIXO}${i}`, JSON.stringify(lista.filter((p) => p.codigo !== chave)))
+        break
+      }
+    }
+  }
+
   return jsonResponse({ ok: true })
 }
 
