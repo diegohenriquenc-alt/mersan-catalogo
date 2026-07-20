@@ -1241,7 +1241,7 @@ if (estoqueTotal === 0) {
 
 return {
   codigo: item.codigo,
-  categoria: item.categoria,
+  categoria: categoriaItem,
   codigoSku: dados.codigoSku,
   promocao: dados.emPromocao,
   nome: dados.nome,
