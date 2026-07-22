@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import ApiService from '../services/api.js'
 
 // Cada vendedor recebe uma cor fixa e diferente, pra chamar mais atenção nos
@@ -43,6 +43,17 @@ function limparNome(nome) {
   return nome.replace(/\.?\s*\d{2,3}$/, '').trim() || nome
 }
 
+// Chave de agrupamento por modelo: a referência COMPLETA (ver explicação
+// detalhada em Catalogo.jsx). Testado ao vivo: tirar o sufixo numérico da
+// referência parece identificar cor em alguns produtos, mas em outros
+// (mesma marca, mesmo prefixo) esse sufixo é na verdade um MODELO
+// diferente — juntar nesses casos misturaria produtos diferentes no mesmo
+// card, então a comparação é sempre pela referência inteira.
+function modeloDaReferencia(referencia) {
+  if (!referencia) return null
+  return referencia.trim()
+}
+
 function formatarPreco(preco) {
   return preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
@@ -57,6 +68,12 @@ function calcularParcelamento(preco) {
 
 export default function Produto() {
   const { codigo } = useParams()
+  const navigate = useNavigate()
+
+  // codigoAtual pode divergir do parâmetro de rota quando o cliente troca
+  // de cor pelo seletor: atualizamos a URL (replace, sem navegação de
+  // fato), mas quem comanda o que é carregado é este estado local.
+  const [codigoAtual, setCodigoAtual] = useState(codigo)
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -72,6 +89,13 @@ export default function Produto() {
   const [vendedorEscolhido, setVendedorEscolhido] = useState(null)
 
   const [relacionados, setRelacionados] = useState([])
+  const [variantesCor, setVariantesCor] = useState([])
+
+  // Chegou aqui por um link de verdade (catálogo, relacionados, etc): o
+  // parâmetro de rota muda, então sincroniza o código "atual" com ele.
+  useEffect(() => {
+    setCodigoAtual(codigo)
+  }, [codigo])
 
   useEffect(() => {
     let cancelado = false
@@ -90,7 +114,7 @@ export default function Produto() {
     async function carregar() {
       let dados
       try {
-        dados = await ApiService.buscarDadosProduto(codigo)
+        dados = await ApiService.buscarDadosProduto(codigoAtual)
       } catch (err) {
         if (!cancelado) {
           setError(err.message || 'Não foi possível consultar o produto.')
@@ -102,7 +126,7 @@ export default function Produto() {
 
       if (cancelado) return
 
-      const chaveFoto = dados.codigoBarras || codigo
+      const chaveFoto = dados.codigoBarras || codigoAtual
       setProduto({
         referencia: dados.referencia,
         nome: dados.nome,
@@ -115,7 +139,7 @@ export default function Produto() {
       setLoading(false)
 
       try {
-        const estoqueResp = await ApiService.buscarEstoque(dados.referencia)
+        const estoqueResp = await ApiService.buscarEstoque(dados.referencia, dados.cor)
         if (!cancelado) setEstoque(estoqueResp.estoque || [])
       } catch {
         if (!cancelado) setErroEstoque(true)
@@ -129,7 +153,15 @@ export default function Produto() {
     return () => {
       cancelado = true
     }
-  }, [codigo])
+  }, [codigoAtual])
+
+  // Troca de cor: atualiza o produto exibido sem sair da página (sem
+  // remount) e mantém a URL coerente com o código sendo mostrado.
+  function selecionarCor(variante) {
+    if (!variante || variante.codigo === codigoAtual) return
+    setCodigoAtual(variante.codigo)
+    navigate(`/produto/${encodeURIComponent(variante.codigo)}`, { replace: true })
+  }
 
   useEffect(() => {
     let cancelado = false
@@ -145,16 +177,52 @@ export default function Produto() {
   }, [])
 
   useEffect(() => {
+    if (!produto) return
     let cancelado = false
     fetch(`/api/catalogo?t=${Date.now()}`)
       .then((r) => r.json())
       .then((data) => {
         if (cancelado) return
         const todosProdutos = data.produtos || []
-        const atual = todosProdutos.find((p) => p.codigo === codigo)
-        const outros = todosProdutos.filter((p) => p.codigo !== codigo)
+        const atual = todosProdutos.find((p) => p.codigo === codigoAtual)
+        const outros = todosProdutos.filter((p) => p.codigo !== codigoAtual)
 
-        const marcaAtual = atual ? extrairMarca(atual.nome) : null
+        // Variantes de cor: mesmo modelo (referência sem sufixo de cor),
+        // uma entrada por cor, priorizando a de maior estoque disponível
+        // quando a mesma cor aparecer bipada mais de uma vez.
+        const modeloAtual = modeloDaReferencia(produto.referencia)
+        if (modeloAtual) {
+          const porCor = new Map()
+          for (const p of todosProdutos) {
+            if (modeloDaReferencia(p.referencia) !== modeloAtual) continue
+            const chaveCor = (p.cor || '').trim().toUpperCase() || p.codigo
+            const existente = porCor.get(chaveCor)
+            if (!existente || (p.estoqueTotal || 0) > (existente.estoqueTotal || 0)) {
+              porCor.set(chaveCor, p)
+            }
+          }
+          // A cor sendo exibida agora sempre aparece na lista, mesmo que
+          // ainda não tenha sido "varrida" pelo catálogo pronto (ex:
+          // acabou de ser bipada).
+          const chaveCorAtual = (produto.cor || '').trim().toUpperCase() || codigoAtual
+          if (!porCor.has(chaveCorAtual)) {
+            porCor.set(chaveCorAtual, {
+              codigo: codigoAtual,
+              cor: produto.cor,
+              referencia: produto.referencia,
+              estoqueTotal: null
+            })
+          }
+          setVariantesCor(
+            Array.from(porCor.values()).sort((a, b) =>
+              String(a.cor || '').localeCompare(String(b.cor || ''))
+            )
+          )
+        } else {
+          setVariantesCor([])
+        }
+
+        const marcaAtual = extrairMarca(produto.nome)
         const mesmaMarca = marcaAtual
           ? outros.filter((p) => extrairMarca(p.nome) === marcaAtual)
           : []
@@ -175,7 +243,7 @@ export default function Produto() {
     return () => {
       cancelado = true
     }
-  }, [codigo])
+  }, [produto, codigoAtual])
 
   const maxParcelas = produto?.preco
     ? Math.min(MAX_PARCELAS, Math.max(1, Math.floor(produto.preco / PARCELA_MINIMA)))
@@ -186,7 +254,7 @@ export default function Produto() {
   const paramsPedido = linkPedidoPronto
     ? new URLSearchParams({
         vendedor: vendedorEscolhido,
-        codigo,
+        codigo: codigoAtual,
         tamanho: tamanhoEscolhido,
         parcelas: String(parcelasEscolhidas)
       }).toString()
@@ -240,6 +308,40 @@ export default function Produto() {
               </p>
             )}
           </div>
+
+          {variantesCor.length > 1 && (
+            <div style={styles.secao}>
+              <h2 style={styles.secaoTitulo}>Cores disponíveis</h2>
+              <div style={styles.opcoesCor}>
+                {variantesCor.map((v) => {
+                  const selecionada = v.codigo === codigoAtual
+                  const semEstoque = v.estoqueTotal === 0
+                  return (
+                    <button
+                      key={v.codigo}
+                      onClick={() => selecionarCor(v)}
+                      disabled={semEstoque}
+                      style={{
+                        ...(selecionada ? styles.opcaoCorSelecionada : styles.opcaoCor),
+                        opacity: semEstoque ? 0.4 : 1
+                      }}
+                      aria-label={`Ver cor ${v.cor || ''}`}
+                    >
+                      <img
+                        src={`/produto-foto/${encodeURIComponent(v.codigo)}`}
+                        alt={v.cor || ''}
+                        style={styles.opcaoCorFoto}
+                        onError={(e) => {
+                          e.currentTarget.src = IMAGEM_PADRAO
+                        }}
+                      />
+                      <span style={styles.opcaoCorNome}>{v.cor || '—'}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {produto.preco != null && (
             <div style={styles.secao}>
@@ -541,6 +643,53 @@ const styles = {
     border: '1px solid #14141a',
     borderRadius: '999px',
     cursor: 'pointer'
+  },
+  opcoesCor: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '10px'
+  },
+  opcaoCor: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '4px',
+    width: '64px',
+    padding: '6px',
+    background: '#f7f7f8',
+    border: '1px solid #ececec',
+    borderRadius: '14px',
+    cursor: 'pointer'
+  },
+  opcaoCorSelecionada: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '4px',
+    width: '64px',
+    padding: '6px',
+    background: '#fff0f1',
+    border: '1px solid #e4002b',
+    borderRadius: '14px',
+    cursor: 'pointer'
+  },
+  opcaoCorFoto: {
+    width: '48px',
+    height: '48px',
+    objectFit: 'contain',
+    borderRadius: '8px',
+    background: '#ffffff'
+  },
+  opcaoCorNome: {
+    fontSize: '9.5px',
+    fontWeight: 700,
+    color: '#14141a',
+    textAlign: 'center',
+    lineHeight: 1.2,
+    maxWidth: '60px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap'
   },
   selectParcelamento: {
     width: '100%',

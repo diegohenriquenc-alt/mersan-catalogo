@@ -142,7 +142,7 @@ export default {
     return respostaAssets
   },
 
-  // Roda sozinho a cada 25 minutos (configurado no wrangler.jsonc). Consulta
+  // Roda sozinho a cada 5 minutos (configurado no wrangler.jsonc). Consulta
   // a Mersan por conta própria pra todos os produtos cadastrados, deixando
   // o cache sempre "quente" — assim, quase ninguém precisa esperar a
   // consulta ao vivo pra Mersan, o catálogo abre rápido quase sempre.
@@ -252,7 +252,14 @@ async function handleProduto(request, url, ctx) {
 // soma as quantidades e devolve só UM item por tamanho — o cliente nunca
 // vê duplicidade, e a quantidade somada só serve internamente pra saber
 // se aquele tamanho está disponível ou não.
-async function buscarEstoqueMersan(referencia, signal) {
+//
+// IMPORTANTE: a "referência" da Mersan às vezes é COMPARTILHADA entre
+// cores diferentes do mesmo modelo (confirmado ao vivo: referência
+// "001 540 ARM232" tem as cores PRETO e OCRE, com grades de tamanho
+// diferentes). Por isso, sempre que soubermos a cor do item, filtramos
+// também por ela (campo "ds_cor" na resposta bruta) — sem isso, o estoque
+// de uma cor "vaza" para a página da outra cor.
+async function buscarEstoqueMersan(referencia, cor, signal) {
   const mersanUrl = `${MERSAN_BASE}/buscapreco/estoque/${encodeURIComponent(referencia)}/${LOJA}`
 
   const resp = await fetch(mersanUrl, {
@@ -266,10 +273,12 @@ async function buscarEstoqueMersan(referencia, signal) {
 
   const registros = await resp.json()
   const lista = Array.isArray(registros) ? registros : [registros]
+  const corAlvo = cor ? String(cor).trim().toUpperCase() : null
 
   const porTamanho = new Map()
   for (const item of lista) {
     if (!item || item.cd_empresa !== LOJA || Number(item.qt_stock) <= 0) continue
+    if (corAlvo && String(item.ds_cor || '').trim().toUpperCase() !== corAlvo) continue
     const tamanho = item.ds_tamanho
     porTamanho.set(tamanho, (porTamanho.get(tamanho) || 0) + Number(item.qt_stock))
   }
@@ -281,6 +290,7 @@ async function buscarEstoqueMersan(referencia, signal) {
 
 async function handleEstoque(request, url, ctx) {
   const referencia = url.searchParams.get('referencia')
+  const cor = url.searchParams.get('cor')
 
   if (!referencia) {
     return jsonResponse({ error: 'Parâmetro "referencia" é obrigatório.' }, 400)
@@ -296,7 +306,7 @@ async function handleEstoque(request, url, ctx) {
 
   let estoqueLoja261
   try {
-    estoqueLoja261 = await buscarEstoqueMersan(referencia)
+    estoqueLoja261 = await buscarEstoqueMersan(referencia, cor)
   } catch {
     return jsonResponse(
       { error: 'Não foi possível conectar à API da Mersan.' },
@@ -541,10 +551,10 @@ async function handleAdminUploadFoto(request, env) {
   // da Mersan como código, não o código de barras usado aqui pra guardar a
   // foto — então consultamos a Mersan pra saber o SKU deste produto antes
   // de cruzar com a planilha. Aproveitamos essa mesma consulta pra já
-  // deixar o produto pronto no catálogo na hora, sem esperar o próximo
-  // ciclo de aquecimento (que roda a cada 25 minutos, em lotes — sem isso,
-  // um produto novo podia demorar até esse tanto de tempo pra aparecer na
-  // vitrine).
+  // deixar o produto pronto no catálogo na hora, sem esperar o aquecimento
+  // (que processa só um lote de produtos a cada 5 minutos, em ciclo — sem
+  // isso, um produto novo podia demorar vários ciclos até ser varrido e
+  // aparecer na vitrine).
   let categoria = ''
   let dadosProduto = null
   try {
@@ -569,7 +579,7 @@ async function handleAdminUploadFoto(request, env) {
 
   if (dadosProduto && dadosProduto.referencia && !dadosProduto.referencia.includes('não encontrado')) {
     try {
-      const estoque = await buscarEstoqueMersan(dadosProduto.referencia)
+      const estoque = await buscarEstoqueMersan(dadosProduto.referencia, dadosProduto.cor)
       const estoqueTotal = estoque.reduce((soma, i) => soma + (i.pares || 0), 0)
       if (estoqueTotal > 0) {
         await upsertCatalogoNovo(env, {
@@ -581,6 +591,8 @@ async function handleAdminUploadFoto(request, env) {
           tamanho: dadosProduto.tamanho,
           preco: dadosProduto.preco,
           precoOriginal: dadosProduto.precoOriginal,
+          referencia: dadosProduto.referencia,
+          cor: dadosProduto.cor,
           estoqueTotal
         })
       }
@@ -835,7 +847,12 @@ const CATEGORIAS_PLANILHA_CHAVE = '_categorias_planilha'
 // espaços, zeros à esquerda, caracteres invisíveis). Normalizamos os dois
 // lados antes de comparar — nunca comparamos por nome ou descrição.
 function normalizarCodigoInterno(valor) {
-  const digitos = String(valor ?? '').replace(/\D/g, '')
+  // O Excel costuma exportar coluna numérica como texto com ".0" no final
+  // (ex: "12345.0"). Sem remover isso antes, o ponto seria descartado junto
+  // com os outros não-dígitos e "12345.0" viraria "123450" — um código
+  // diferente do "12345" real, quebrando o cruzamento com a Mersan.
+  const semSufixoDecimal = String(valor ?? '').trim().replace(/\.0+$/, '')
+  const digitos = semSufixoDecimal.replace(/\D/g, '')
   return digitos.replace(/^0+/, '') || digitos
 }
 
@@ -866,6 +883,10 @@ async function salvarCategoriasPlanilha(env, mapa) {
 // Substitui o mapa inteiro a cada envio — a loja sempre manda a planilha
 // completa (não só os itens novos), então não há necessidade de mesclar
 // com o que já existia; a versão nova já é a fonte de verdade completa.
+// Depois de salvar, já reaplica a planilha nova em cima de todos os
+// produtos já cadastrados (mesma lógica do botão "Recalcular categorias")
+// — categoria nunca fica presa numa planilha antiga esperando um clique
+// manual extra ou o próximo ciclo do cron.
 async function handleAdminSalvarPlanilhaGeneros(request, env) {
   if (!autenticado(request, env)) {
     return jsonResponse({ error: 'Senha incorreta.' }, 401)
@@ -879,19 +900,21 @@ async function handleAdminSalvarPlanilhaGeneros(request, env) {
   }
 
   await salvarCategoriasPlanilha(env, mapa)
-  return jsonResponse({ ok: true, totalCodigos: Object.keys(mapa).length })
+  const resultadoRecalculo = await recalcularCategoriasInterno(env)
+
+  return jsonResponse({
+    ok: true,
+    totalCodigos: Object.keys(mapa).length,
+    recalculo: resultadoRecalculo
+  })
 }
 
 // Aplica a planilha já carregada em cima dos produtos que JÁ estão
 // cadastrados (fotos existentes), sem precisar recadastrar nada. Só
 // reescreve a foto (mesmos bytes, metadata nova) quando a categoria
 // realmente muda — evita gravações desnecessárias no KV.
-async function handleAdminRecalcularCategorias(request, env) {
-  if (!autenticado(request, env)) {
-    return jsonResponse({ error: 'Senha incorreta.' }, 401)
-  }
-
-  const mapa = await getCategoriasPlanilha(env)
+async function recalcularCategoriasInterno(env) {
+  const indice = indexarCategoriasPorCodigo(await getCategoriasPlanilha(env))
 
   // O código usado pra cadastrar a foto (código de barras) não é o mesmo
   // "Código" da planilha (que é o SKU interno da Mersan). Cruzamos usando
@@ -929,7 +952,12 @@ async function handleAdminRecalcularCategorias(request, env) {
     const sku = skuPorCodigo[chaveInfo.name]
     if (!sku) { semSku++; continue }
 
-    const categoriaNova = mapa[sku]
+    // Mesma normalização usada na bipagem/cron (indexarCategoriasPorCodigo
+    // + normalizarCodigoInterno) — antes este recálculo comparava o SKU
+    // "cru" contra as chaves da planilha sem normalizar, então um código
+    // com zero à esquerda ou formatação diferente casava na bipagem mas
+    // deixava de casar aqui, ficando com categoria desatualizada.
+    const categoriaNova = indice[normalizarCodigoInterno(sku)]
     if (!categoriaNova) continue
     encontrados++
 
@@ -949,13 +977,21 @@ async function handleAdminRecalcularCategorias(request, env) {
     atualizados++
   }
 
-  return jsonResponse({
-    ok: true,
+  return {
     totalFotos: fotos.length,
     encontradosNaPlanilha: encontrados,
     atualizados,
     semDadosDeSku: semSku
-  })
+  }
+}
+
+async function handleAdminRecalcularCategorias(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const resultado = await recalcularCategoriasInterno(env)
+  return jsonResponse({ ok: true, ...resultado })
 }
 
 async function handleAdminExcluirVendedor(request, url, env) {
@@ -1326,12 +1362,12 @@ async function preAquecerCatalogoLote(env) {
 
         if (!dados.referencia || dados.referencia.includes('não encontrado')) { erros.push({ codigo: item.codigo, motivo: 'sem referência' }); return null }
 
-        const estoque = await buscarEstoqueMersan(dados.referencia)
+        const estoque = await buscarEstoqueMersan(dados.referencia, dados.cor)
 
         // Mesma ideia pro estoque (/api/estoque) — essa é a parte que
         // demorava alguns segundos na tela do produto; com isso pronto
         // de antemão, some quase toda essa espera.
-        const urlEstoque = `${origem}/api/estoque?referencia=${encodeURIComponent(dados.referencia)}`
+        const urlEstoque = `${origem}/api/estoque?referencia=${encodeURIComponent(dados.referencia)}&cor=${encodeURIComponent(dados.cor || '')}`
         await cache.put(
           new Request(urlEstoque),
           jsonResponse(
@@ -1357,6 +1393,8 @@ return {
   tamanho: dados.tamanho,
   preco: dados.preco,
   precoOriginal: dados.precoOriginal,
+  referencia: dados.referencia,
+  cor: dados.cor,
   estoqueTotal
 }
       } catch (err) {
@@ -1393,7 +1431,7 @@ async function handleCatalogoPronto(env, ctx) {
 
   // Produtos cadastrados há pouco tempo, que ainda não foram varridos por
   // nenhum lote do aquecimento, entram aqui na hora — sem isso, um
-  // produto novo só aparecia no catálogo depois de até 25 minutos.
+  // produto novo só aparecia no catálogo depois de vários ciclos do cron.
   const novos = await getCatalogoNovos(env)
   const codigosNoCatalogo = new Set(produtos.map((p) => p.codigo))
   const novosAindaFaltando = novos.filter((n) => !codigosNoCatalogo.has(n.codigo))

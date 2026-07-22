@@ -34,14 +34,21 @@ class ApiService {
   }
 
   /**
-   * Consulta o estoque de uma referência na loja 261, via proxy.
+   * Consulta o estoque de uma referência (de uma cor específica) na loja
+   * 261, via proxy. A cor é obrigatória na prática: a mesma referência pode
+   * ser compartilhada por mais de uma cor na Mersan, então sem a cor o
+   * estoque de uma cor pode "vazar" pra outra — e o cache local colidiria
+   * entre elas se usasse só a referência como chave.
    */
-  static async buscarEstoque(referencia) {
-    const cacheKey = `estoque_${referencia}`
+  static async buscarEstoque(referencia, cor) {
+    const cacheKey = `estoque_${referencia}_${cor || ''}`
     const cached = getCached(cacheKey)
     if (cached) return cached
 
-    const resp = await fetch(`/api/estoque?referencia=${encodeURIComponent(referencia)}`)
+    const params = new URLSearchParams({ referencia })
+    if (cor) params.set('cor', cor)
+
+    const resp = await fetch(`/api/estoque?${params.toString()}`)
     const data = await safeJson(resp)
 
     if (!resp.ok) {
@@ -58,7 +65,7 @@ class ApiService {
    */
   static async buscarProduto(termo) {
     const dadosProduto = await ApiService.buscarDadosProduto(termo)
-    const estoque = await ApiService.buscarEstoque(dadosProduto.referencia)
+    const estoque = await ApiService.buscarEstoque(dadosProduto.referencia, dadosProduto.cor)
 
     // Chave da foto: código de barras do produto (o mesmo que o painel
     // administrativo usa ao cadastrar a foto). Se a foto não existir no R2,

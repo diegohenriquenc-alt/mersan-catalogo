@@ -294,28 +294,37 @@ function PainelFotos({ senha }) {
     return new File([ultimoBlob], 'foto.jpg', { type: 'image/jpeg' })
   }
 
-  // Calcula a(s) categoria(s) de um item da planilha. Ordem de prioridade
-  // (da mais alta pra mais baixa): Corrida (linha "CORRIDA") > Infantil >
-  // Esportivo (linha "ESPORTE") > gênero puro. Corrida é categoria própria
-  // e nunca vira Esportivo, mesmo que a linha também pudesse sugerir isso.
-  // Unisex entra nas duas categorias de gênero.
+  // Calcula a(s) categoria(s) de um item da planilha.
+  //
+  // Unisex é categoria própria (não duplica mais em Masculino + Feminino):
+  // qualquer item com gênero UNISEX/UNISSEX vira só "Unissex", independente
+  // de linha ou faixa etária.
+  //
+  // Para os demais (Masculino/Feminino), ordem de prioridade da linha (da
+  // mais alta pra mais baixa): Corrida (linha "CORRIDA") > Infantil (faixa
+  // "INFANTIL") > Esportivo (linha "ESPORTE") > Casual (nenhuma das
+  // anteriores — era exibido "nu", sem rótulo de linha; agora é explícito).
   function calcularCategoriasPlanilha(faixaEtaria, genero, linha) {
+    const generoNormalizado = (genero || '').trim().toUpperCase()
+
+    if (generoNormalizado === 'UNISEX' || generoNormalizado === 'UNISSEX') {
+      return ['Unissex']
+    }
+
+    if (generoNormalizado !== 'MASCULINO' && generoNormalizado !== 'FEMININO') {
+      return []
+    }
+
     const linhaNormalizada = (linha || '').trim().toUpperCase()
     const corrida = linhaNormalizada === 'CORRIDA'
     const infantil = (faixaEtaria || '').trim().toUpperCase() === 'INFANTIL'
     const esportivo = linhaNormalizada === 'ESPORTE'
-    const generoNormalizado = (genero || '').trim().toUpperCase()
-    const generos = generoNormalizado === 'UNISEX' ? ['MASCULINO', 'FEMININO'] : [generoNormalizado]
+    const rotulo = generoNormalizado === 'MASCULINO' ? 'Masculino' : 'Feminino'
 
-    return generos
-      .filter((g) => g === 'MASCULINO' || g === 'FEMININO')
-      .map((g) => {
-        const rotulo = g === 'MASCULINO' ? 'Masculino' : 'Feminino'
-        if (corrida) return `Corrida ${rotulo}`
-        if (infantil) return `Infantil ${rotulo}`
-        if (esportivo) return `Esportivo ${rotulo}`
-        return rotulo
-      })
+    if (corrida) return [`Corrida ${rotulo}`]
+    if (infantil) return [`Infantil ${rotulo}`]
+    if (esportivo) return [`Esportivo ${rotulo}`]
+    return [`Casual ${rotulo}`]
   }
 
   // Parser simples de CSV, com suporte a campos entre aspas (caso a
@@ -418,9 +427,10 @@ function PainelFotos({ senha }) {
       if (!resp.ok) {
         setStatusPlanilha({ tipo: 'erro', texto: data.error || 'Falha ao enviar a planilha.' })
       } else {
+        const atualizados = data.recalculo?.atualizados ?? 0
         setStatusPlanilha({
           tipo: 'sucesso',
-          texto: `Planilha salva: ${data.totalCodigos} códigos. Agora bipe produtos novos ou use "Recalcular categorias" para os já cadastrados.`
+          texto: `Planilha salva: ${data.totalCodigos} códigos. Categoria já reaplicada nos produtos cadastrados (${atualizados} atualizados agora).`
         })
       }
     } catch {
@@ -905,8 +915,9 @@ function PainelFotos({ senha }) {
           <h2 style={styles.subtitulo}>Planilha de Gêneros</h2>
           <p style={styles.vazio}>
             Sobe a planilha (CSV) com as colunas Código, Faixa Etária, Gênero e Linha.
-            Produtos bipados depois disso já vêm com a categoria automática.
-            Pra aplicar nos produtos que já estão cadastrados, use "Recalcular categorias".
+            Ao salvar, a categoria já é reaplicada automaticamente em todos os produtos
+            cadastrados — não precisa clicar em "Recalcular categorias" depois. O botão
+            abaixo continua disponível como reforço manual, se precisar.
           </p>
 
           <label style={styles.label}>

@@ -42,7 +42,9 @@ export default function Carrinho() {
         const dadosProduto = respProduto.ok ? await respProduto.json() : null
         if (!dadosProduto) return null
 
-        const respEstoque = await fetch(`/api/estoque?referencia=${encodeURIComponent(dadosProduto.referencia)}`)
+        const respEstoque = await fetch(
+          `/api/estoque?referencia=${encodeURIComponent(dadosProduto.referencia)}&cor=${encodeURIComponent(dadosProduto.cor || '')}`
+        )
         const dadosEstoque = respEstoque.ok ? await respEstoque.json() : null
 
         return { codigo: item.codigo, produto: dadosProduto, estoque: dadosEstoque?.estoque || [] }

@@ -7,11 +7,26 @@ const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
 const MAX_PARCELAS = 10
 
-const CATEGORIAS = ['Feminino', 'Masculino', 'Infantil Feminino', 'Infantil Masculino', 'Esportivo Feminino', 'Esportivo Masculino', 'Corrida Feminino', 'Corrida Masculino', 'Arezzo', 'Promoção']
+const CATEGORIAS = ['Unissex', 'Casual Feminino', 'Casual Masculino', 'Infantil Feminino', 'Infantil Masculino', 'Esportivo Feminino', 'Esportivo Masculino', 'Corrida Feminino', 'Corrida Masculino', 'Promoção']
 
 const PALAVRAS_NAO_MARCA = new Set([
   'CASUAL', 'CORRIDA', 'ESPORTIVO', 'CONFORTO', 'SOCIAL', 'INFANTIL'
 ])
+
+// Chave de agrupamento por modelo: a referência COMPLETA, sem tirar nenhum
+// sufixo. Testado ao vivo contra o catálogo real: em alguns produtos (ex.
+// Aramis "001 540 ARM232", Biaggio "001 737 DRI-235") a mesma referência é
+// realmente compartilhada entre cores diferentes — aí sim é o mesmo
+// modelo. Mas em outros (ex. Stir "012 307 RIO-03" vs "012 307 RIO-06",
+// mesma cor NATURAL nos dois) o sufixo numérico identifica um MODELO
+// diferente, não uma cor — tirar esse sufixo pra comparar juntaria dois
+// produtos diferentes no mesmo card, o que é pior do que não agrupar.
+// Por isso a comparação é sempre pela referência inteira, nunca por uma
+// versão "aparada" dela.
+function modeloDaReferencia(referencia) {
+  if (!referencia) return null
+  return referencia.trim()
+}
 
 function extrairMarca(nome) {
   if (!nome) return null
@@ -90,8 +105,10 @@ export default function Catalogo() {
     if (categoriaAtiva === 'Promoção') {
       lista = lista.filter((p) => p.promocao)
     } else if (categoriaAtiva) {
-      // Um produto pode ter mais de uma categoria (ex: unisex entra em
-      // "Masculino, Feminino"), guardadas separadas por vírgula.
+      // Categoria vem da planilha como uma string só (ex: "Corrida
+      // Masculino"), mas o split por vírgula fica mantido por segurança
+      // com dados salvos antes desta versão (formato antigo do Unissex,
+      // que duplicava "Masculino, Feminino" no mesmo campo).
       lista = lista.filter((p) =>
         (p.categoria || '').split(',').map((c) => c.trim()).includes(categoriaAtiva)
       )
@@ -105,6 +122,31 @@ export default function Catalogo() {
     return lista
   }, [produtos, categoriaAtiva, termoBusca])
 
+  // Cada cor de um modelo hoje vira uma entrada própria no catálogo (foto,
+  // referência e estoque independentes). Pra vitrine mostrar só UM card por
+  // modelo (como Nike/Netshoes/Centauro), agrupamos pela referência sem o
+  // sufixo de cor (modeloDaReferencia) e escolhemos como capa a variante
+  // com mais estoque disponível. A ordem de exibição segue a primeira
+  // aparição de cada modelo na lista já filtrada/buscada.
+  const produtosAgrupados = useMemo(() => {
+    const grupos = new Map()
+    let ordem = 0
+
+    for (const p of produtosFiltrados) {
+      const chave = modeloDaReferencia(p.referencia) || `__solo_${p.codigo}`
+      const existente = grupos.get(chave)
+      if (!existente) {
+        grupos.set(chave, { capa: p, ordem: ordem++ })
+      } else if ((p.estoqueTotal || 0) > (existente.capa.estoqueTotal || 0)) {
+        existente.capa = p
+      }
+    }
+
+    return Array.from(grupos.values())
+      .sort((a, b) => a.ordem - b.ordem)
+      .map((g) => g.capa)
+  }, [produtosFiltrados])
+
   useEffect(() => {
     if (produtos.length === 0) return
     const executarOcioso = window.requestIdleCallback || ((cb) => setTimeout(cb, 300))
@@ -114,7 +156,8 @@ export default function Catalogo() {
           .then((r) => r.json())
           .then((dados) => {
             if (dados?.referencia) {
-              fetch(`/api/estoque?referencia=${encodeURIComponent(dados.referencia)}`).catch(() => {})
+              const corQuery = encodeURIComponent(dados.cor || '')
+              fetch(`/api/estoque?referencia=${encodeURIComponent(dados.referencia)}&cor=${corQuery}`).catch(() => {})
             }
           })
           .catch(() => {})
@@ -192,12 +235,12 @@ export default function Catalogo() {
       <main style={styles.conteudo}>
         {loading && <p style={styles.status}>Carregando produtos…</p>}
         {erro && <p style={styles.erro}>{erro}</p>}
-        {!loading && !erro && produtosFiltrados.length === 0 && (
+        {!loading && !erro && produtosAgrupados.length === 0 && (
           <p style={styles.status}>Nenhum produto encontrado.</p>
         )}
 
         <div style={styles.grade}>
-          {produtosFiltrados.map((p) => {
+          {produtosAgrupados.map((p) => {
             const marca = extrairMarca(p.nome)
             const nomeExibido = limparNome(p.nome, p.tamanho)
             const parcelamento = calcularParcelamento(p.preco)
