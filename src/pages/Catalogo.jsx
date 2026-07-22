@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ehFavorito, alternarFavorito, contarFavoritos } from '../utils/favoritos.js'
 import { estaNoCarrinho, adicionarAoCarrinho, contarCarrinho } from '../utils/carrinho.js'
+import { limparNomeProduto } from '../utils/nomeProduto.js'
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
 const MAX_PARCELAS = 10
@@ -36,12 +37,6 @@ function extrairMarca(nome) {
   }
   if (palavras.length >= 3) return palavras[2]?.toUpperCase() || null
   return null
-}
-function limparNome(nome, tamanho) {
-  if (!nome) return ''
-  if (!tamanho) return nome
-  const semTamanho = nome.replace(new RegExp(`\\s+${tamanho}\\.?$`), '')
-  return semTamanho || nome
 }
 function calcularParcelamento(preco) {
   if (preco == null) return null
@@ -218,7 +213,7 @@ export default function Catalogo() {
         <div style={styles.grade}>
           {produtosAgrupados.map((p) => {
             const marca = extrairMarca(p.nome)
-            const nomeExibido = limparNome(p.nome, p.tamanho)
+            const nomeExibido = limparNomeProduto(p.nome)
             const parcelamento = calcularParcelamento(p.preco)
             return (
               <Link key={p.codigo} to={`/produto/${encodeURIComponent(p.codigo)}`} style={styles.card}>
@@ -238,7 +233,7 @@ export default function Catalogo() {
 {p.estoqueTotal <= 2 && <span style={styles.selo}>ÚLTIMAS UNIDADES</span>}
                   <img
                     src={`/produto-foto/${encodeURIComponent(p.codigo)}`}
-                    alt={p.nome}
+                    alt={nomeExibido}
                     loading="lazy"
                     style={styles.foto}
                     onError={(e) => {

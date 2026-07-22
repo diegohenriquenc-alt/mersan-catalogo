@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import ApiService from '../services/api.js'
+import { limparNomeProduto } from '../utils/nomeProduto.js'
 
 // Cada vendedor recebe uma cor fixa e diferente, pra chamar mais atenção nos
 // botões de escolha (a mesma paleta é usada nesta página e no carrinho).
@@ -29,18 +30,6 @@ function extrairMarca(nome) {
   }
   if (palavras.length >= 3) return palavras[2]?.toUpperCase() || null
   return null
-}
-
-// Remove o número do calçado que vem "colado" no final do nome do produto
-// (ex: "TENIS REEBOK RF 100201946 PRETO. 42" -> "...PRETO"). Antes essa
-// função só funcionava se o texto batesse exatamente com o "tamanho" do
-// produto bipado — falhava em casos como esse (ponto antes do espaço).
-// Agora remove qualquer número de 2-3 dígitos no final, independente do
-// tamanho escolhido pelo cliente, então nunca mais aparece um número que
-// não seja o que o cliente realmente selecionou.
-function limparNome(nome) {
-  if (!nome) return ''
-  return nome.replace(/\.?\s*\d{2,3}$/, '').trim() || nome
 }
 
 // Chave de agrupamento por modelo: a referência COMPLETA (ver explicação
@@ -261,7 +250,7 @@ export default function Produto() {
     : ''
 
   const marca = produto ? extrairMarca(produto.nome) : null
-  const nomeExibido = produto ? limparNome(produto.nome) : ''
+  const nomeExibido = produto ? limparNomeProduto(produto.nome) : ''
 
   return (
     <main style={styles.pagina}>
@@ -282,7 +271,7 @@ export default function Produto() {
             {produto.emPromocao && <span style={styles.selo}>PROMOÇÃO</span>}
             <img
               src={produto.foto || IMAGEM_PADRAO}
-              alt={produto.nome}
+              alt={nomeExibido}
               style={styles.foto}
               onError={(e) => {
                 e.currentTarget.onerror = null
@@ -443,7 +432,7 @@ export default function Produto() {
                     <div style={styles.miniFotoWrapper}>
                       <img
                         src={`/produto-foto/${encodeURIComponent(p.codigo)}`}
-                        alt={p.nome}
+                        alt={limparNomeProduto(p.nome)}
                         loading="lazy"
                         style={styles.miniFoto}
                         onError={(e) => {
@@ -451,7 +440,7 @@ export default function Produto() {
                         }}
                       />
                     </div>
-                    <span style={styles.miniNome}>{p.nome}</span>
+                    <span style={styles.miniNome}>{limparNomeProduto(p.nome)}</span>
                     {p.preco != null && <span style={styles.miniPreco}>{formatarPreco(p.preco)}</span>}
                   </Link>
                 ))}

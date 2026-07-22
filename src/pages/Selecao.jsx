@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { limparNomeProduto } from '../utils/nomeProduto.js'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 
@@ -87,12 +88,12 @@ export default function Selecao() {
               <div key={`${item.codigo}-${i}`} style={styles.item}>
                 <img
                   src={`/produto-foto/${encodeURIComponent(p.codigoBarras || item.codigo)}`}
-                  alt={p.nome}
+                  alt={limparNomeProduto(p.nome)}
                   style={styles.foto}
                   onError={(e) => { e.currentTarget.src = IMAGEM_PADRAO }}
                 />
                 <div style={styles.info}>
-                  <span style={styles.nome}>{p.nome}</span>
+                  <span style={styles.nome}>{limparNomeProduto(p.nome)}</span>
                   {p.referencia && <span style={styles.detalhe}>Referência: {p.referencia}</span>}
                   {p.cor && <span style={styles.detalhe}>Cor: {p.cor}</span>}
                   {item.tamanho && <span style={styles.detalhe}>Tamanho: {item.tamanho}</span>}

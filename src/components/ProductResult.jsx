@@ -1,7 +1,10 @@
+import { limparNomeProduto } from '../utils/nomeProduto.js'
+
 const IMAGEM_PADRAO = '/icons/icon-512.svg' // trocado pelo sistema próprio de fotos na Etapa 3
 
 export default function ProductResult({ produto, ocultarEstoque = false }) {
   const { nome, referencia, cor, preco, foto, estoque, loja } = produto
+  const nomeExibido = limparNomeProduto(nome)
 
   const semEstoque = !estoque || estoque.length === 0
 
@@ -9,7 +12,7 @@ export default function ProductResult({ produto, ocultarEstoque = false }) {
     <div style={styles.card}>
       <img
         src={foto || IMAGEM_PADRAO}
-        alt={nome || referencia}
+        alt={nomeExibido || referencia}
         style={styles.foto}
         onError={(e) => {
           e.currentTarget.onerror = null
@@ -18,7 +21,7 @@ export default function ProductResult({ produto, ocultarEstoque = false }) {
       />
 
       <div style={styles.info}>
-        <h1 style={styles.nome}>{nome || 'Produto'}</h1>
+        <h1 style={styles.nome}>{nomeExibido || 'Produto'}</h1>
         <p style={styles.linha}>Ref: {referencia}</p>
         {cor && <p style={styles.linha}>Cor: {cor}</p>}
         {preco != null && (

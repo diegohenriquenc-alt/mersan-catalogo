@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { listarFavoritos, removerFavorito } from '../utils/favoritos.js'
+import { limparNomeProduto } from '../utils/nomeProduto.js'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 
@@ -60,12 +61,12 @@ export default function Favoritos() {
             <div key={p.codigo} style={styles.item}>
               <img
                 src={`/produto-foto/${encodeURIComponent(p.codigoBarras || p.codigo)}`}
-                alt={p.nome}
+                alt={limparNomeProduto(p.nome)}
                 style={styles.foto}
                 onError={(e) => { e.currentTarget.src = IMAGEM_PADRAO }}
               />
               <div style={styles.info}>
-                <span style={styles.nome}>{p.nome}</span>
+                <span style={styles.nome}>{limparNomeProduto(p.nome)}</span>
                 <span style={styles.detalhe}>Referência: {p.referencia}</span>
                 {p.tamanho && <span style={styles.detalhe}>Tamanho: {p.tamanho}</span>}
                 <span style={styles.preco}>R$ {Number(p.preco).toFixed(2).replace('.', ',')}</span>

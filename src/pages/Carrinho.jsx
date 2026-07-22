@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { listarCarrinho, removerDoCarrinho, definirTamanho } from '../utils/carrinho.js'
+import { limparNomeProduto } from '../utils/nomeProduto.js'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
@@ -140,12 +141,12 @@ export default function Carrinho() {
               <div key={item.codigo} style={styles.itemCard}>
                 <img
                   src={`/produto-foto/${encodeURIComponent(p.codigoBarras || item.codigo)}`}
-                  alt={p.nome}
+                  alt={limparNomeProduto(p.nome)}
                   style={styles.foto}
                   onError={(e) => { e.currentTarget.src = IMAGEM_PADRAO }}
                 />
                 <div style={styles.info}>
-                  <span style={styles.nome}>{p.nome}</span>
+                  <span style={styles.nome}>{limparNomeProduto(p.nome)}</span>
                   <span style={styles.preco}>R$ {Number(p.preco).toFixed(2).replace('.', ',')}</span>
 
                   <select
