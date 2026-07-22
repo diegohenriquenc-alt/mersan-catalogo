@@ -1444,7 +1444,15 @@ async function handleCatalogoPronto(env, ctx) {
     ctx.waitUntil(env.FOTOS.put(CATALOGO_NOVOS_CHAVE, JSON.stringify(novosAindaFaltando)))
   }
 
-  return jsonResponse({ produtos: [...produtos, ...novosAindaFaltando] }, 200, {
+  // Produto com estoque zerado sai do catálogo automaticamente — a foto
+  // continua guardada no banco (não é apagada), então se o estoque voltar
+  // (reposição na Mersan), o produto reaparece sozinho no próximo ciclo,
+  // sem precisar recadastrar nada.
+  const produtosComEstoque = [...produtos, ...novosAindaFaltando].filter(
+    (p) => p.estoqueTotal == null || p.estoqueTotal > 0
+  )
+
+  return jsonResponse({ produtos: produtosComEstoque }, 200, {
     'Cache-Control': 'public, max-age=120'
   })
 }
