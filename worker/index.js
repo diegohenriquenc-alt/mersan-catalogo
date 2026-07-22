@@ -725,7 +725,16 @@ async function handleAdminListarFotos(request, env) {
 
   const chavesFotos = await listarTodasFotos(env)
   const fotos = chavesFotos
-    .filter((k) => k.name !== VENDEDORES_CHAVE && k.name !== CATALOGO_CACHE_CHAVE && k.name !== CATALOGO_CURSOR_CHAVE)
+    .filter(
+      (k) =>
+        k.name !== VENDEDORES_CHAVE &&
+        k.name !== CATALOGO_CACHE_CHAVE &&
+        k.name !== CATALOGO_CURSOR_CHAVE &&
+        k.name !== CATEGORIAS_PLANILHA_CHAVE &&
+        k.name !== CATALOGO_NOVOS_CHAVE &&
+        !k.name.startsWith('_catalogo') &&
+        !k.name.startsWith(SELECOES_PREFIXO)
+    )
     .map((k) => ({
       codigo: k.name,
       tamanho: k.metadata?.tamanho || null,
