@@ -2,11 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ehFavorito, alternarFavorito, contarFavoritos } from '../utils/favoritos.js'
 import { estaNoCarrinho, adicionarAoCarrinho, contarCarrinho } from '../utils/carrinho.js'
-
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
 const MAX_PARCELAS = 10
-
 const CATEGORIAS = ['Unissex', 'Casual Feminino', 'Casual Masculino', 'Infantil Feminino', 'Infantil Masculino', 'Esportivo Feminino', 'Esportivo Masculino', 'Corrida Feminino', 'Corrida Masculino', 'Promoção']
 
 const PALAVRAS_NAO_MARCA = new Set([
@@ -39,14 +37,12 @@ function extrairMarca(nome) {
   if (palavras.length >= 3) return palavras[2]?.toUpperCase() || null
   return null
 }
-
 function limparNome(nome, tamanho) {
   if (!nome) return ''
   if (!tamanho) return nome
   const semTamanho = nome.replace(new RegExp(`\\s+${tamanho}\\.?$`), '')
   return semTamanho || nome
 }
-
 function calcularParcelamento(preco) {
   if (preco == null) return null
   const max = Math.min(MAX_PARCELAS, Math.max(1, Math.floor(preco / PARCELA_MINIMA)))
@@ -54,12 +50,10 @@ function calcularParcelamento(preco) {
   const valor = (preco / max).toFixed(2).replace('.', ',')
   return `em até ${max}x de R$ ${valor}`
 }
-
 function formatarPreco(preco) {
   if (preco == null) return ''
   return preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
-
 export default function Catalogo() {
   const [produtos, setProdutos] = useState([])
   const [loading, setLoading] = useState(true)
@@ -70,17 +64,14 @@ export default function Catalogo() {
   const [categoriaAtiva, setCategoriaAtiva] = useState(null)
   const [favoritosVersao, setFavoritosVersao] = useState(0)
   const [carrinhoVersao, setCarrinhoVersao] = useState(0)
-
   useEffect(() => {
     let cancelado = false
-
     async function carregar() {
       setLoading(true)
       setErro(null)
       try {
         const resp = await fetch(`/api/catalogo?t=${Date.now()}`)
         const data = await resp.json()
-
         if (!cancelado) {
           setProdutos(data.produtos || [])
         }
@@ -92,16 +83,13 @@ export default function Catalogo() {
         if (!cancelado) setLoading(false)
       }
     }
-
     carregar()
     return () => {
       cancelado = true
     }
   }, [])
-
   const produtosFiltrados = useMemo(() => {
     let lista = produtos
-
     if (categoriaAtiva === 'Promoção') {
       lista = lista.filter((p) => p.promocao)
     } else if (categoriaAtiva) {
@@ -113,12 +101,10 @@ export default function Catalogo() {
         (p.categoria || '').split(',').map((c) => c.trim()).includes(categoriaAtiva)
       )
     }
-
     if (termoBusca.trim()) {
       const termo = termoBusca.trim().toLowerCase()
       lista = lista.filter((p) => (p.nome || '').toLowerCase().includes(termo))
     }
-
     return lista
   }, [produtos, categoriaAtiva, termoBusca])
 
@@ -167,12 +153,10 @@ export default function Catalogo() {
       if (window.cancelIdleCallback && typeof idleId === 'number') window.cancelIdleCallback(idleId)
     }
   }, [produtos])
-
   function selecionarCategoria(categoria) {
     setCategoriaAtiva((atual) => (atual === categoria ? null : categoria))
     setMenuAberto(false)
   }
-
   return (
     <div style={styles.pagina}>
       <header style={styles.cabecalho}>
@@ -184,7 +168,6 @@ export default function Catalogo() {
           >
             <IconeMenu />
           </button>
-
           <button
             onClick={() => setBuscaAberta((v) => !v)}
             style={styles.iconeBotao}
@@ -192,24 +175,20 @@ export default function Catalogo() {
           >
             <IconeBusca />
           </button>
-
           <Link to="/favoritos" style={styles.iconeBotaoFavorito} aria-label="Meus favoritos">
             <span>❤️</span>
             <span style={styles.badgeFavoritos}>{contarFavoritos()}</span>
           </Link>
-
           <Link to="/carrinho" style={styles.iconeBotaoFavorito} aria-label="Meu carrinho">
             <span>🛒</span>
             <span style={styles.badgeFavoritos}>{contarCarrinho()}</span>
           </Link>
         </div>
-
         <Link to="/" style={styles.marca}>
           <span style={styles.marcaMersan}>MERSAN</span>
           <span style={styles.marcaCalcados}>CALÇADOS</span>
         </Link>
       </header>
-
       {buscaAberta && (
         <div style={styles.barraBusca}>
           <input
@@ -222,7 +201,6 @@ export default function Catalogo() {
           />
         </div>
       )}
-
       {categoriaAtiva && (
         <div style={styles.filtroAtivo}>
           <span>Filtrando: {categoriaAtiva}</span>
@@ -231,20 +209,17 @@ export default function Catalogo() {
           </button>
         </div>
       )}
-
       <main style={styles.conteudo}>
         {loading && <p style={styles.status}>Carregando produtos…</p>}
         {erro && <p style={styles.erro}>{erro}</p>}
         {!loading && !erro && produtosAgrupados.length === 0 && (
           <p style={styles.status}>Nenhum produto encontrado.</p>
         )}
-
         <div style={styles.grade}>
           {produtosAgrupados.map((p) => {
             const marca = extrairMarca(p.nome)
             const nomeExibido = limparNome(p.nome, p.tamanho)
             const parcelamento = calcularParcelamento(p.preco)
-
             return (
               <Link key={p.codigo} to={`/produto/${encodeURIComponent(p.codigo)}`} style={styles.card}>
                 <div style={styles.fotoWrapper}>
@@ -282,21 +257,21 @@ export default function Catalogo() {
               {estaNoCarrinho(p.codigo) ? '✅' : '🛒'}
             </button>
           </div>
-
                 <div style={styles.cardInfo}>
                   {marca && <span style={styles.marcaEtiqueta}>{marca}</span>}
                   <span style={styles.nome}>{nomeExibido}</span>
-
                   
-
                   <div style={styles.precoBloco}>
                     {p.promocao && p.precoOriginal > p.preco && (
                       <span style={styles.precoOriginal}>{formatarPreco(p.precoOriginal)}</span>
                     )}
-                    {p.preco != null && <span style={styles.preco}>{formatarPreco(p.preco)}</span>}
+                    {p.preco != null && (
+                      <span style={p.promocao ? styles.precoPromocao : styles.preco}>
+                        {formatarPreco(p.preco)}
+                      </span>
+                    )}
                     <span style={styles.parcelamento}>{parcelamento || '\u00A0'}</span>
                   </div>
-
                   <span style={styles.botaoWhats}>
                     <IconeWhatsApp />
                     COMPRAR
@@ -307,7 +282,6 @@ export default function Catalogo() {
           })}
         </div>
       </main>
-
       {menuAberto && (
         <>
           <div style={styles.overlay} onClick={() => setMenuAberto(false)} />
@@ -339,7 +313,6 @@ export default function Catalogo() {
     </div>
   )
 }
-
 function IconeMenu() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -347,7 +320,6 @@ function IconeMenu() {
     </svg>
   )
 }
-
 function IconeBusca() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
@@ -356,7 +328,6 @@ function IconeBusca() {
     </svg>
   )
 }
-
 function IconeWhatsApp() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
@@ -364,7 +335,6 @@ function IconeWhatsApp() {
     </svg>
   )
 }
-
 const styles = {
   pagina: {
     minHeight: '100dvh',
@@ -598,13 +568,20 @@ badgeFavoritos: {
   },
   precoOriginal: {
     fontSize: '10px',
-    color: '#b3b3ba',
+    fontWeight: 800,
+    color: '#14141a',
     textDecoration: 'line-through'
   },
   preco: {
     fontSize: '14.5px',
     fontWeight: 900,
     color: '#14141a',
+    letterSpacing: '-0.01em'
+  },
+  precoPromocao: {
+    fontSize: '14.5px',
+    fontWeight: 900,
+    color: '#e4002b',
     letterSpacing: '-0.01em'
   },
   parcelamento: {
