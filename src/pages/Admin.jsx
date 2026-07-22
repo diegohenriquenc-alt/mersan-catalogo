@@ -294,12 +294,16 @@ function PainelFotos({ senha }) {
     return new File([ultimoBlob], 'foto.jpg', { type: 'image/jpeg' })
   }
 
-  // Calcula a(s) categoria(s) de um item da planilha, seguindo a mesma
-  // regra combinada: Infantil e Esportivo (linha "ESPORTE") têm prioridade
-  // sobre o gênero puro; Unisex entra nas duas categorias de gênero.
+  // Calcula a(s) categoria(s) de um item da planilha. Ordem de prioridade
+  // (da mais alta pra mais baixa): Corrida (linha "CORRIDA") > Infantil >
+  // Esportivo (linha "ESPORTE") > gênero puro. Corrida é categoria própria
+  // e nunca vira Esportivo, mesmo que a linha também pudesse sugerir isso.
+  // Unisex entra nas duas categorias de gênero.
   function calcularCategoriasPlanilha(faixaEtaria, genero, linha) {
+    const linhaNormalizada = (linha || '').trim().toUpperCase()
+    const corrida = linhaNormalizada === 'CORRIDA'
     const infantil = (faixaEtaria || '').trim().toUpperCase() === 'INFANTIL'
-    const esportivo = (linha || '').trim().toUpperCase() === 'ESPORTE'
+    const esportivo = linhaNormalizada === 'ESPORTE'
     const generoNormalizado = (genero || '').trim().toUpperCase()
     const generos = generoNormalizado === 'UNISEX' ? ['MASCULINO', 'FEMININO'] : [generoNormalizado]
 
@@ -307,6 +311,7 @@ function PainelFotos({ senha }) {
       .filter((g) => g === 'MASCULINO' || g === 'FEMININO')
       .map((g) => {
         const rotulo = g === 'MASCULINO' ? 'Masculino' : 'Feminino'
+        if (corrida) return `Corrida ${rotulo}`
         if (infantil) return `Infantil ${rotulo}`
         if (esportivo) return `Esportivo ${rotulo}`
         return rotulo
