@@ -96,6 +96,15 @@ function PainelFotos({ senha }) {
     const [recalculando, setRecalculando] = useState(false)
     const [statusRecalculo, setStatusRecalculo] = useState(null)
 
+  // Seleção múltipla, ações em massa, paginação e aba de esgotados
+  const [selecionados, setSelecionados] = useState(new Set())
+  const [categoriaEmMassa, setCategoriaEmMassa] = useState('')
+  const [aplicandoEmMassa, setAplicandoEmMassa] = useState(false)
+  const [statusEmMassa, setStatusEmMassa] = useState(null)
+  const [limiteExibicao, setLimiteExibicao] = useState(50)
+  const [abaAtiva, setAbaAtiva] = useState('cadastradas')
+  const [estoquePorCodigo, setEstoquePorCodigo] = useState({})
+
   const carregarLista = useCallback(async () => {
     setCarregandoLista(true)
     try {
@@ -128,6 +137,21 @@ function PainelFotos({ senha }) {
   useEffect(() => {
     carregarVendedores()
   }, [carregarVendedores])
+
+  const carregarEstoques = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/catalogo')
+      const data = await resp.json()
+      const mapa = {}
+      for (const p of data.produtos || []) mapa[p.codigo] = p.estoqueTotal
+      setEstoquePorCodigo(mapa)
+    } catch {
+    }
+  }, [])
+
+  useEffect(() => {
+    carregarEstoques()
+  }, [carregarEstoques])
 
   async function handleSalvarVendedor(e) {
     e.preventDefault()
@@ -548,9 +572,83 @@ function PainelFotos({ senha }) {
     }
   }
 
+  function alternarSelecao(codigoFoto) {
+    setSelecionados((atual) => {
+      const novo = new Set(atual)
+      if (novo.has(codigoFoto)) novo.delete(codigoFoto)
+      else novo.add(codigoFoto)
+      return novo
+    })
+  }
+
+  function limparSelecao() {
+    setSelecionados(new Set())
+    setStatusEmMassa(null)
+  }
+
+  async function handleAplicarCategoriaEmMassa() {
+    if (selecionados.size === 0) return
+    setAplicandoEmMassa(true)
+    setStatusEmMassa(null)
+    try {
+      const codigos = Array.from(selecionados)
+      await Promise.all(
+        codigos.map((codigoFoto) =>
+          fetch('/api/admin/foto', {
+            method: 'PATCH',
+            headers: { 'X-Admin-Password': senha, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ codigo: codigoFoto, categoria: categoriaEmMassa })
+          })
+        )
+      )
+      setStatusEmMassa({ tipo: 'sucesso', texto: `Categoria aplicada a ${codigos.length} produtos.` })
+      setSelecionados(new Set())
+      carregarLista()
+    } catch {
+      setStatusEmMassa({ tipo: 'erro', texto: 'Não foi possível aplicar em todos. Tente novamente.' })
+    } finally {
+      setAplicandoEmMassa(false)
+    }
+  }
+
+  async function handleExcluirEmMassa() {
+    if (selecionados.size === 0) return
+    if (!confirm(`Excluir ${selecionados.size} produtos selecionados? Essa ação não pode ser desfeita.`)) return
+    setAplicandoEmMassa(true)
+    setStatusEmMassa(null)
+    try {
+      const codigos = Array.from(selecionados)
+      await Promise.all(
+        codigos.map((codigoFoto) =>
+          fetch(`/api/admin/foto?codigo=${encodeURIComponent(codigoFoto)}`, {
+            method: 'DELETE',
+            headers: { 'X-Admin-Password': senha }
+          })
+        )
+      )
+      setStatusEmMassa({ tipo: 'sucesso', texto: `${codigos.length} produtos excluídos.` })
+      setSelecionados(new Set())
+      carregarLista()
+      carregarEstoques()
+    } catch {
+      setStatusEmMassa({ tipo: 'erro', texto: 'Não foi possível excluir todos. Tente novamente.' })
+    } finally {
+      setAplicandoEmMassa(false)
+    }
+  }
+
   function handleSair() {
     sessionStorage.removeItem('mersan_admin_senha')
     window.location.reload()
+  }
+
+  const fotosEsgotadas = fotos.filter((f) => estoquePorCodigo[f.codigo] === 0)
+  const fotosNormais = fotos.filter((f) => estoquePorCodigo[f.codigo] !== 0)
+  const fotosExibidas = abaAtiva === 'esgotados' ? fotosEsgotadas : fotosNormais
+  const fotosParaMostrar = fotosExibidas.slice(0, limiteExibicao)
+
+  function selecionarTodosVisiveis() {
+    setSelecionados(new Set(fotosParaMostrar.map((f) => f.codigo)))
   }
 
   return (
@@ -633,16 +731,103 @@ function PainelFotos({ senha }) {
         </form>
 
         <div style={styles.listaBox}>
+          <div style={styles.abas}>
+            <button
+              type="button"
+              onClick={() => { setAbaAtiva('cadastradas'); limparSelecao() }}
+              style={abaAtiva === 'cadastradas' ? styles.abaBotaoAtiva : styles.abaBotao}
+            >
+              Fotos cadastradas ({fotosNormais.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => { setAbaAtiva('esgotados'); limparSelecao() }}
+              style={abaAtiva === 'esgotados' ? styles.abaBotaoAtiva : styles.abaBotao}
+            >
+              Esgotados ({fotosEsgotadas.length})
+            </button>
+          </div>
+
+          {abaAtiva === 'esgotados' && (
+            <p style={styles.vazio}>
+              Produtos com estoque zerado na Mersan (já saem da vitrine automaticamente).
+              Use pra revisar e excluir os que não vão voltar a ter estoque.
+            </p>
+          )}
+
+          <div style={styles.barraAcoes}>
+            <button type="button" onClick={selecionarTodosVisiveis} style={styles.botaoLinkPequeno}>
+              Selecionar todos os visíveis
+            </button>
+            {selecionados.size > 0 && (
+              <button type="button" onClick={limparSelecao} style={styles.botaoLinkPequeno}>
+                Limpar seleção ({selecionados.size})
+              </button>
+            )}
+          </div>
+
+          {selecionados.size > 0 && (
+            <div style={styles.barraAcoesEmMassa}>
+              <select
+                value={categoriaEmMassa}
+                onChange={(e) => setCategoriaEmMassa(e.target.value)}
+                style={styles.input}
+              >
+                <option value="">Sem categoria</option>
+                <option value="Feminino">Feminino</option>
+                <option value="Masculino">Masculino</option>
+                <option value="Infantil Feminino">Infantil Feminino</option>
+                <option value="Infantil Masculino">Infantil Masculino</option>
+                <option value="Esportivo Feminino">Esportivo Feminino</option>
+                <option value="Esportivo Masculino">Esportivo Masculino</option>
+                <option value="Arezzo">Arezzo</option>
+              </select>
+              <button
+                type="button"
+                onClick={handleAplicarCategoriaEmMassa}
+                style={styles.botaoSecundario}
+                disabled={aplicandoEmMassa}
+              >
+                {aplicandoEmMassa ? 'Aplicando…' : `Aplicar categoria a ${selecionados.size} produtos`}
+              </button>
+              <button
+                type="button"
+                onClick={handleExcluirEmMassa}
+                style={styles.botaoExcluir}
+                disabled={aplicandoEmMassa}
+              >
+                Excluir {selecionados.size} selecionados
+              </button>
+              {selecionados.size > 50 && (
+                <p style={styles.vazio}>
+                  Atenção: ações em massa muito grandes gastam do limite diário de gravações do banco (1.000/dia).
+                </p>
+              )}
+            </div>
+          )}
+
+          {statusEmMassa && (
+            <p style={statusEmMassa.tipo === 'erro' ? styles.erro : styles.sucesso}>{statusEmMassa.texto}</p>
+          )}
+
           <h2 style={styles.subtitulo}>
-            Fotos cadastradas {carregandoLista ? '(carregando…)' : `(${fotos.length})`}
+            {carregandoLista ? 'Carregando…' : `Mostrando ${fotosParaMostrar.length} de ${fotosExibidas.length}`}
           </h2>
-          {fotos.length === 0 && !carregandoLista && (
-            <p style={styles.vazio}>Nenhuma foto cadastrada ainda.</p>
+          {fotosExibidas.length === 0 && !carregandoLista && (
+            <p style={styles.vazio}>
+              {abaAtiva === 'esgotados' ? 'Nenhum produto esgotado no momento.' : 'Nenhuma foto cadastrada ainda.'}
+            </p>
           )}
           <ul style={styles.lista}>
-            {fotos.map((f) => (
+            {fotosParaMostrar.map((f) => (
               <Fragment key={f.codigo}>
                 <li style={styles.itemLista}>
+                  <input
+                    type="checkbox"
+                    checked={selecionados.has(f.codigo)}
+                    onChange={() => alternarSelecao(f.codigo)}
+                    style={styles.checkboxItem}
+                  />
                   <img
                     src={`/produto-foto/${encodeURIComponent(f.codigo)}`}
                     alt={f.codigo}
@@ -713,6 +898,16 @@ function PainelFotos({ senha }) {
               </Fragment>
             ))}
           </ul>
+
+          {fotosExibidas.length > limiteExibicao && (
+            <button
+              type="button"
+              onClick={() => setLimiteExibicao((n) => n + 50)}
+              style={styles.botaoSecundario}
+            >
+              Carregar mais 50 (faltam {fotosExibidas.length - limiteExibicao})
+            </button>
+          )}
         </div>
 
         <div style={styles.listaBox}>
@@ -1132,6 +1327,62 @@ const styles = {
     background: '#ffffff',
     border: 'none',
     borderRadius: '999px',
+    cursor: 'pointer'
+  },
+  abas: {
+    display: 'flex',
+    gap: '8px',
+    marginBottom: '12px'
+  },
+  abaBotao: {
+    padding: '8px 14px',
+    fontSize: '13px',
+    fontWeight: 700,
+    color: '#6b6b6b',
+    background: '#f2f2f2',
+    border: 'none',
+    borderRadius: '999px',
+    cursor: 'pointer'
+  },
+  abaBotaoAtiva: {
+    padding: '8px 14px',
+    fontSize: '13px',
+    fontWeight: 700,
+    color: '#ffffff',
+    background: '#14141a',
+    border: 'none',
+    borderRadius: '999px',
+    cursor: 'pointer'
+  },
+  barraAcoes: {
+    display: 'flex',
+    gap: '14px',
+    marginBottom: '8px'
+  },
+  botaoLinkPequeno: {
+    padding: 0,
+    fontSize: '12px',
+    fontWeight: 700,
+    color: '#0057ff',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    textDecoration: 'underline'
+  },
+  barraAcoesEmMassa: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    padding: '14px',
+    background: '#fafafa',
+    border: '1px solid #e6e6e6',
+    borderRadius: '10px',
+    marginBottom: '12px'
+  },
+  checkboxItem: {
+    width: '18px',
+    height: '18px',
+    flexShrink: 0,
     cursor: 'pointer'
   }
     }
