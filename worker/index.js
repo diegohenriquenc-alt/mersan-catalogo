@@ -67,10 +67,6 @@ export default {
       return handleAdminUploadFoto(request, env)
     }
 
-    if (url.pathname === '/api/admin/foto' && request.method === 'PATCH') {
-      return handleAdminAtualizarFoto(request, env)
-    }
-
     if (url.pathname === '/api/admin/foto/renomear' && request.method === 'POST') {
       return handleAdminRenomearFoto(request, env)
     }
@@ -528,7 +524,6 @@ async function handleAdminUploadFoto(request, env) {
   const form = await request.formData()
   const codigo = form.get('codigo')
   const arquivo = form.get('arquivo')
-  const categoriaManual = form.get('categoria') || ''
 
   if (!codigo || !arquivo) {
     return jsonResponse({ error: 'Envie "codigo" e "arquivo".' }, 400)
@@ -542,14 +537,15 @@ async function handleAdminUploadFoto(request, env) {
     return jsonResponse({ error: 'Arquivo grande demais (máximo 24MB).' }, 400)
   }
 
-  // A planilha usa o SKU interno da Mersan como código, não o código de
-  // barras usado aqui pra guardar a foto — então consultamos a Mersan pra
-  // saber o SKU deste produto antes de cruzar com a planilha. Aproveitamos
-  // essa mesma consulta pra já deixar o produto pronto no catálogo na
-  // hora, sem esperar o próximo ciclo de aquecimento (que roda a cada 25
-  // minutos, em lotes — sem isso, um produto novo podia demorar até esse
-  // tanto de tempo pra aparecer na vitrine).
-  let categoria = categoriaManual
+  // Categoria vem exclusivamente da planilha: a planilha usa o SKU interno
+  // da Mersan como código, não o código de barras usado aqui pra guardar a
+  // foto — então consultamos a Mersan pra saber o SKU deste produto antes
+  // de cruzar com a planilha. Aproveitamos essa mesma consulta pra já
+  // deixar o produto pronto no catálogo na hora, sem esperar o próximo
+  // ciclo de aquecimento (que roda a cada 25 minutos, em lotes — sem isso,
+  // um produto novo podia demorar até esse tanto de tempo pra aparecer na
+  // vitrine).
+  let categoria = ''
   let dadosProduto = null
   try {
     dadosProduto = await buscarDadosProdutoMersan(chave)
@@ -557,10 +553,10 @@ async function handleAdminUploadFoto(request, env) {
     const daPlanilha = indice[normalizarCodigoInterno(dadosProduto.codigoSku)]
     if (daPlanilha) categoria = daPlanilha
   } catch {
-    // Sem dados da Mersan agora: mantém a categoria escolhida manualmente.
-    // A foto é salva normalmente; o produto só não entra "na hora" no
-    // catálogo — o próximo ciclo de aquecimento resolve isso do jeito
-    // que já funcionava antes.
+    // Sem dados da Mersan agora: a foto é salva sem categoria. O produto
+    // só não entra "na hora" no catálogo — o próximo ciclo de aquecimento
+    // (ou "Recalcular categorias") aplica a categoria da planilha assim
+    // que os dados da Mersan (e o SKU) ficarem disponíveis.
   }
 
   await env.FOTOS.put(chave, bytes, {
@@ -593,41 +589,6 @@ async function handleAdminUploadFoto(request, env) {
       // produto entra no catálogo no próximo ciclo de aquecimento normal.
     }
   }
-
-  return jsonResponse({ ok: true, codigo: chave })
-}
-
-// Atualiza só categoria/promoção de uma foto já cadastrada, sem precisar
-// reenviar a imagem — o KV não permite trocar metadata sem "reescrever" o
-// valor, então lemos os bytes já salvos e gravamos de novo, mesma imagem,
-// metadata nova.
-async function handleAdminAtualizarFoto(request, env) {
-  if (!autenticado(request, env)) {
-    return jsonResponse({ error: 'Senha incorreta.' }, 401)
-  }
-
-  const corpo = await request.json().catch(() => null)
-  const codigo = corpo?.codigo
-  const categoria = corpo?.categoria || ''
-
-  if (!codigo) {
-    return jsonResponse({ error: 'Parâmetro "codigo" é obrigatório.' }, 400)
-  }
-
-  const chave = normalizarCodigo(codigo)
-  const resultado = await env.FOTOS.getWithMetadata(chave, 'arrayBuffer')
-
-  if (!resultado || !resultado.value) {
-    return jsonResponse({ error: 'Foto não encontrada para esse código.' }, 404)
-  }
-
-  await env.FOTOS.put(chave, resultado.value, {
-    metadata: {
-      contentType: resultado.metadata?.contentType || 'image/jpeg',
-      tamanho: resultado.metadata?.tamanho || resultado.value.byteLength,
-      categoria
-    }
-  })
 
   return jsonResponse({ ok: true, codigo: chave })
 }

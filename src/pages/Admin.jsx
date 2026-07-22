@@ -66,7 +66,6 @@ export default function Admin() {
 function PainelFotos({ senha }) {
   const [codigo, setCodigo] = useState('')
   const [arquivo, setArquivo] = useState(null)
-  const [categoria, setCategoria] = useState('')
   const [editando, setEditando] = useState(null)
   const [renomeando, setRenomeando] = useState(null)
   const [novaReferencia, setNovaReferencia] = useState('')
@@ -98,7 +97,6 @@ function PainelFotos({ senha }) {
 
   // Seleção múltipla, ações em massa, paginação e aba de esgotados
   const [selecionados, setSelecionados] = useState(new Set())
-  const [categoriaEmMassa, setCategoriaEmMassa] = useState('')
   const [aplicandoEmMassa, setAplicandoEmMassa] = useState(false)
   const [statusEmMassa, setStatusEmMassa] = useState(null)
   const [limiteExibicao, setLimiteExibicao] = useState(50)
@@ -450,41 +448,29 @@ function PainelFotos({ senha }) {
     } finally {
       setRecalculando(false)
     }
-      }async function handleEnviar(e) {
+      }
+
+  async function handleEnviar(e) {
     e.preventDefault()
-    if (!codigo) return
-    if (!arquivo && !editando) return
+    if (!codigo || !arquivo) return
 
     setEnviando(true)
     setStatus(null)
 
     try {
-      let resp
-      if (arquivo) {
-        const form = new FormData()
-        form.append('codigo', codigo)
-        form.append('categoria', categoria)
-        try {
-          const arquivoComprimido = await comprimirImagem(arquivo)
-          form.append('arquivo', arquivoComprimido)
-        } catch {
-          form.append('arquivo', arquivo)
-        }
-        resp = await fetch('/api/admin/foto', {
-          method: 'POST',
-          headers: { 'X-Admin-Password': senha },
-          body: form
-        })
-      } else {
-        resp = await fetch('/api/admin/foto', {
-          method: 'PATCH',
-          headers: {
-            'X-Admin-Password': senha,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ codigo, categoria })
-        })
-  }
+      const form = new FormData()
+      form.append('codigo', codigo)
+      try {
+        const arquivoComprimido = await comprimirImagem(arquivo)
+        form.append('arquivo', arquivoComprimido)
+      } catch {
+        form.append('arquivo', arquivo)
+      }
+      const resp = await fetch('/api/admin/foto', {
+        method: 'POST',
+        headers: { 'X-Admin-Password': senha },
+        body: form
+      })
       const data = await resp.json()
       if (!resp.ok) {
         setStatus({ tipo: 'erro', texto: data.error || 'Falha ao enviar.' })
@@ -492,7 +478,6 @@ function PainelFotos({ senha }) {
         setStatus({ tipo: 'sucesso', texto: `Foto salva para "${data.codigo}".` })
         setCodigo('')
         setArquivo(null)
-        setCategoria('')
         setPreview(null)
         setEditando(null)
         carregarLista()
@@ -507,7 +492,6 @@ function PainelFotos({ senha }) {
   function handleEditar(foto) {
     setEditando(foto.codigo)
     setCodigo(foto.codigo)
-    setCategoria(foto.categoria || '')
     setArquivo(null)
     setPreview(`/produto-foto/${encodeURIComponent(foto.codigo)}`)
     setStatus(null)
@@ -517,7 +501,6 @@ function PainelFotos({ senha }) {
   function handleCancelarEdicao() {
     setEditando(null)
     setCodigo('')
-    setCategoria('')
     setArquivo(null)
     setPreview(null)
     setStatus(null)
@@ -589,31 +572,6 @@ function PainelFotos({ senha }) {
   function limparSelecao() {
     setSelecionados(new Set())
     setStatusEmMassa(null)
-  }
-
-  async function handleAplicarCategoriaEmMassa() {
-    if (selecionados.size === 0) return
-    setAplicandoEmMassa(true)
-    setStatusEmMassa(null)
-    try {
-      const codigos = Array.from(selecionados)
-      await Promise.all(
-        codigos.map((codigoFoto) =>
-          fetch('/api/admin/foto', {
-            method: 'PATCH',
-            headers: { 'X-Admin-Password': senha, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ codigo: codigoFoto, categoria: categoriaEmMassa })
-          })
-        )
-      )
-      setStatusEmMassa({ tipo: 'sucesso', texto: `Categoria aplicada a ${codigos.length} produtos.` })
-      setSelecionados(new Set())
-      carregarLista()
-    } catch {
-      setStatusEmMassa({ tipo: 'erro', texto: 'Não foi possível aplicar em todos. Tente novamente.' })
-    } finally {
-      setAplicandoEmMassa(false)
-    }
   }
 
   async function handleExcluirEmMassa() {
@@ -692,7 +650,7 @@ function PainelFotos({ senha }) {
         <form onSubmit={handleEnviar} style={styles.formUpload}>
           {editando && (
             <p style={styles.editandoAviso}>
-              ✏️ Editando "{editando}" — escolha uma foto nova só se quiser trocá-la.
+              ✏️ Editando "{editando}" — escolha uma foto nova para atualizar.
             </p>
           )}
 
@@ -715,27 +673,13 @@ function PainelFotos({ senha }) {
           </label>
 
           <label style={styles.label}>
-            Foto {editando && '(opcional — deixe em branco para manter a atual)'}
+            Foto
             <input type="file" accept="image/*" onChange={handleArquivo} style={styles.inputArquivo} />
           </label>
 
-          <label style={styles.label}>
-            Categoria
-            <select
-              value={categoria}
-              onChange={(e) => setCategoria(e.target.value)}
-              style={styles.input}
-            >
-              <option value="">Sem categoria</option>
-              <option value="Feminino">Feminino</option>
-<option value="Masculino">Masculino</option>
-<option value="Infantil Feminino">Infantil Feminino</option>
-<option value="Infantil Masculino">Infantil Masculino</option>
-<option value="Esportivo Feminino">Esportivo Feminino</option>
-<option value="Esportivo Masculino">Esportivo Masculino</option>
-<option value="Arezzo">Arezzo</option>
-            </select>
-          </label>
+          <p style={styles.vazio}>
+            A categoria é definida automaticamente pela planilha de gêneros (veja abaixo), a partir do SKU do produto.
+          </p>
 
           {preview && <img src={preview} alt="Pré-visualização" style={styles.preview} />}
 
@@ -746,7 +690,7 @@ function PainelFotos({ senha }) {
           <button
             type="submit"
             style={styles.botao}
-            disabled={enviando || !codigo || (!arquivo && !editando)}
+            disabled={enviando || !codigo || !arquivo}
           >
             {enviando ? 'Salvando…' : editando ? 'Salvar alterações' : 'Salvar foto'}
           </button>
@@ -830,28 +774,6 @@ function PainelFotos({ senha }) {
 
           {selecionados.size > 0 && (
             <div style={styles.barraAcoesEmMassa}>
-              <select
-                value={categoriaEmMassa}
-                onChange={(e) => setCategoriaEmMassa(e.target.value)}
-                style={styles.input}
-              >
-                <option value="">Sem categoria</option>
-                <option value="Feminino">Feminino</option>
-                <option value="Masculino">Masculino</option>
-                <option value="Infantil Feminino">Infantil Feminino</option>
-                <option value="Infantil Masculino">Infantil Masculino</option>
-                <option value="Esportivo Feminino">Esportivo Feminino</option>
-                <option value="Esportivo Masculino">Esportivo Masculino</option>
-                <option value="Arezzo">Arezzo</option>
-              </select>
-              <button
-                type="button"
-                onClick={handleAplicarCategoriaEmMassa}
-                style={styles.botaoSecundario}
-                disabled={aplicandoEmMassa}
-              >
-                {aplicandoEmMassa ? 'Aplicando…' : `Aplicar categoria a ${selecionados.size} produtos`}
-              </button>
               <button
                 type="button"
                 onClick={handleExcluirEmMassa}
