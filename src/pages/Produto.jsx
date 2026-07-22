@@ -2,6 +2,15 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import ApiService from '../services/api.js'
 
+// Cada vendedor recebe uma cor fixa e diferente, pra chamar mais atenção nos
+// botões de escolha (a mesma paleta é usada nesta página e no carrinho).
+const PALETA_VENDEDORES = ['#e4002b', '#0a7cff', '#0f9d58', '#f4a300', '#7b2ff7', '#00b8a9', '#ff6f3c', '#c2185b']
+function corVendedor(id) {
+  let hash = 0
+  for (let i = 0; i < String(id).length; i++) hash = (hash * 31 + String(id).charCodeAt(i)) >>> 0
+  return PALETA_VENDEDORES[hash % PALETA_VENDEDORES.length]
+}
+
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
 const MAX_PARCELAS = 10
@@ -22,11 +31,16 @@ function extrairMarca(nome) {
   return null
 }
 
-function limparNome(nome, tamanho) {
+// Remove o número do calçado que vem "colado" no final do nome do produto
+// (ex: "TENIS REEBOK RF 100201946 PRETO. 42" -> "...PRETO"). Antes essa
+// função só funcionava se o texto batesse exatamente com o "tamanho" do
+// produto bipado — falhava em casos como esse (ponto antes do espaço).
+// Agora remove qualquer número de 2-3 dígitos no final, independente do
+// tamanho escolhido pelo cliente, então nunca mais aparece um número que
+// não seja o que o cliente realmente selecionou.
+function limparNome(nome) {
   if (!nome) return ''
-  if (!tamanho) return nome
-  const semTamanho = nome.replace(new RegExp(`\\s+${tamanho}\\.?$`), '')
-  return semTamanho || nome
+  return nome.replace(/\.?\s*\d{2,3}$/, '').trim() || nome
 }
 
 function formatarPreco(preco) {
@@ -179,7 +193,7 @@ export default function Produto() {
     : ''
 
   const marca = produto ? extrairMarca(produto.nome) : null
-  const nomeExibido = produto ? limparNome(produto.nome, produto.tamanho) : ''
+  const nomeExibido = produto ? limparNome(produto.nome) : ''
 
   return (
     <main style={styles.pagina}>
@@ -288,15 +302,24 @@ export default function Produto() {
             <div style={styles.secao}>
               <h2 style={styles.secaoTitulo}>Escolha o vendedor</h2>
               <div style={styles.opcoes}>
-                {vendedores.map((v) => (
-                  <button
-                    key={v.id}
-                    onClick={() => setVendedorEscolhido(v.id)}
-                    style={vendedorEscolhido === v.id ? styles.opcaoSelecionada : styles.opcao}
-                  >
-                    {v.nome}
-                  </button>
-                ))}
+                {vendedores.map((v) => {
+                  const cor = corVendedor(v.id)
+                  const selecionado = vendedorEscolhido === v.id
+                  return (
+                    <button
+                      key={v.id}
+                      onClick={() => setVendedorEscolhido(v.id)}
+                      style={{
+                        ...(selecionado ? styles.opcaoSelecionada : styles.opcao),
+                        background: selecionado ? cor : `${cor}22`,
+                        borderColor: cor,
+                        color: selecionado ? '#ffffff' : cor
+                      }}
+                    >
+                      {v.nome}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -418,13 +441,7 @@ const styles = {
   fotoWrapper: {
     position: 'relative',
     width: '100%',
-    // Antes era aspectRatio 1/1 com width 100%, o que fazia a foto ficar
-    // tão alta quanto a tela é larga — em celulares altos e estreitos
-    // isso comia quase metade da tela. Usando altura baseada na altura
-    // da TELA (vh) em vez da largura, a foto fica proporcionalmente
-    // menor em telas normais, sobrando espaço pra numeração e sugestões
-    // aparecerem sem precisar rolar tanto.
-    height: 'clamp(170px, 27vh, 260px)',
+    aspectRatio: '1 / 1',
     background: '#ffffff'
   },
   foto: {
