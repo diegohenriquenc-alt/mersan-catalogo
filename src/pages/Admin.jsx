@@ -345,7 +345,7 @@ function PainelFotos({ senha }) {
     const idxCodigo = cabecalho.findIndex((c) => c.includes('código') || c.includes('codigo'))
     const idxFaixa = cabecalho.findIndex((c) => c.includes('faixa'))
     const idxGenero = cabecalho.findIndex((c) => c.includes('gênero') || c.includes('genero'))
-    const idxLinha = cabecalho.findIndex((c) => c === 'linha')
+    const idxLinha = cabecalho.findIndex((c) => c.includes('linha'))
 
     const registros = []
     for (let i = 1; i < linhas.length; i++) {
