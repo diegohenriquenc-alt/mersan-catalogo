@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { listarCarrinho, removerDoCarrinho, definirTamanho } from '../utils/carrinho.js'
 import { limparNomeProduto } from '../utils/nomeProduto.js'
+import { corVendedor, ordenarVendedoresPorHora } from '../utils/vendedores.js'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
@@ -112,18 +113,24 @@ export default function Carrinho() {
           <div style={styles.blocoVendedor}>
             <span style={styles.tituloVendedor}>Escolha o vendedor</span>
             <div style={styles.opcoesVendedor}>
-              {vendedores.map((v) => (
-                <button
-                  key={v.id}
-                  onClick={() => setVendedorEscolhido(v.id)}
-                  style={{
-                    ...styles.botaoVendedor,
-                    ...(vendedorEscolhido === v.id ? styles.botaoVendedorAtivo : {})
-                  }}
-                >
-                  {v.nome}
-                </button>
-              ))}
+              {ordenarVendedoresPorHora(vendedores).map((v) => {
+                const cor = corVendedor(v.id)
+                const selecionado = vendedorEscolhido === v.id
+                return (
+                  <button
+                    key={v.id}
+                    onClick={() => setVendedorEscolhido(v.id)}
+                    style={{
+                      ...styles.botaoVendedor,
+                      background: selecionado ? cor : `${cor}22`,
+                      borderColor: cor,
+                      color: selecionado ? '#ffffff' : cor
+                    }}
+                  >
+                    {v.nome}
+                  </button>
+                )
+              })}
             </div>
             {vendedores.length === 0 && (
               <span style={styles.avisoTamanho}>Nenhum vendedor cadastrado ainda.</span>
@@ -223,11 +230,8 @@ const styles = {
   tituloVendedor: { fontWeight: 700, fontSize: '14px', display: 'block', marginBottom: '8px' },
   opcoesVendedor: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
   botaoVendedor: {
-    border: '1px solid #ddd', background: '#f7f7f8', borderRadius: '999px',
+    border: '1px solid #ddd', borderRadius: '999px',
     padding: '8px 14px', fontSize: '13px', fontWeight: 600, cursor: 'pointer'
-  },
-  botaoVendedorAtivo: {
-    background: '#e4002b', color: '#fff', border: '1px solid #e4002b'
   },
   lista: { display: 'flex', flexDirection: 'column', gap: '12px' },
   itemCard: {

@@ -2,15 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import ApiService from '../services/api.js'
 import { limparNomeProduto } from '../utils/nomeProduto.js'
-
-// Cada vendedor recebe uma cor fixa e diferente, pra chamar mais atenção nos
-// botões de escolha (a mesma paleta é usada nesta página e no carrinho).
-const PALETA_VENDEDORES = ['#e4002b', '#0a7cff', '#0f9d58', '#f4a300', '#7b2ff7', '#00b8a9', '#ff6f3c', '#c2185b']
-function corVendedor(id) {
-  let hash = 0
-  for (let i = 0; i < String(id).length; i++) hash = (hash * 31 + String(id).charCodeAt(i)) >>> 0
-  return PALETA_VENDEDORES[hash % PALETA_VENDEDORES.length]
-}
+import { corVendedor, ordenarVendedoresPorHora } from '../utils/vendedores.js'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
@@ -288,7 +280,11 @@ export default function Produto() {
               {produto.emPromocao && produto.precoOriginal > produto.preco && (
                 <span style={styles.precoOriginal}>{formatarPreco(produto.precoOriginal)}</span>
               )}
-              {produto.preco != null && <span style={styles.preco}>{formatarPreco(produto.preco)}</span>}
+              {produto.preco != null && (
+                <span style={produto.emPromocao ? styles.precoPromocao : styles.preco}>
+                  {formatarPreco(produto.preco)}
+                </span>
+              )}
             </div>
 
             {produto.preco != null && maxParcelas > 1 && (
@@ -393,7 +389,7 @@ export default function Produto() {
             <div style={styles.secao}>
               <h2 style={styles.secaoTitulo}>Escolha o vendedor</h2>
               <div style={styles.opcoes}>
-                {vendedores.map((v) => {
+                {ordenarVendedoresPorHora(vendedores).map((v) => {
                   const cor = corVendedor(v.id)
                   const selecionado = vendedorEscolhido === v.id
                   return (
@@ -585,6 +581,12 @@ const styles = {
     fontSize: '32px',
     fontWeight: 900,
     color: '#14141a',
+    letterSpacing: '-0.01em'
+  },
+  precoPromocao: {
+    fontSize: '32px',
+    fontWeight: 900,
+    color: '#e4002b',
     letterSpacing: '-0.01em'
   },
   parcelamento: {
