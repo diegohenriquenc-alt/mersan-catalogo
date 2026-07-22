@@ -1444,13 +1444,28 @@ async function handleCatalogoPronto(env, ctx) {
     ctx.waitUntil(env.FOTOS.put(CATALOGO_NOVOS_CHAVE, JSON.stringify(novosAindaFaltando)))
   }
 
+  // Como só um lote é reprocessado por ciclo, e a contagem total de
+  // produtos muda o tempo todo (produtos novos/excluídos na hora), um
+  // mesmo produto pode acabar temporariamente presente em dois lotes ao
+  // mesmo tempo (um "lote velho" que ainda não foi reprocessado, e um
+  // "lote novo" que já pegou ele na posição atual). Isso aparecia como
+  // duplicata no catálogo. Removendo por código aqui garante que o
+  // cliente nunca vê duplicata, mesmo que o rearranjo interno ainda não
+  // tenha terminado de se acertar sozinho.
+  const todosProdutos = [...produtos, ...novosAindaFaltando]
+  const codigosVistos = new Set()
+  const semDuplicata = []
+  for (const p of todosProdutos) {
+    if (codigosVistos.has(p.codigo)) continue
+    codigosVistos.add(p.codigo)
+    semDuplicata.push(p)
+  }
+
   // Produto com estoque zerado sai do catálogo automaticamente — a foto
   // continua guardada no banco (não é apagada), então se o estoque voltar
   // (reposição na Mersan), o produto reaparece sozinho no próximo ciclo,
   // sem precisar recadastrar nada.
-  const produtosComEstoque = [...produtos, ...novosAindaFaltando].filter(
-    (p) => p.estoqueTotal == null || p.estoqueTotal > 0
-  )
+  const produtosComEstoque = semDuplicata.filter((p) => p.estoqueTotal == null || p.estoqueTotal > 0)
 
   return jsonResponse({ produtos: produtosComEstoque }, 200, {
     'Cache-Control': 'public, max-age=120'
