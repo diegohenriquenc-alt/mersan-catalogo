@@ -105,6 +105,10 @@ function PainelFotos({ senha }) {
   const [abaAtiva, setAbaAtiva] = useState('cadastradas')
   const [estoquePorCodigo, setEstoquePorCodigo] = useState({})
   const [listaAberta, setListaAberta] = useState(false)
+  const [codigoExcluirManual, setCodigoExcluirManual] = useState('')
+  const [excluindoManual, setExcluindoManual] = useState(false)
+  const [statusExcluirManual, setStatusExcluirManual] = useState(null)
+
 
   const carregarLista = useCallback(async () => {
     setCarregandoLista(true)
@@ -638,6 +642,29 @@ function PainelFotos({ senha }) {
     }
   }
 
+  async function handleExcluirManual() {
+    const codigoFoto = codigoExcluirManual.trim()
+    if (!codigoFoto) return
+    if (!confirm(`Excluir "${codigoFoto}" do catálogo? Use isso pra itens "fantasma" que aparecem no site mas não têm foto cadastrada.`)) return
+
+    setExcluindoManual(true)
+    setStatusExcluirManual(null)
+    try {
+      await fetch(`/api/admin/foto?codigo=${encodeURIComponent(codigoFoto)}`, {
+        method: 'DELETE',
+        headers: { 'X-Admin-Password': senha }
+      })
+      setStatusExcluirManual({ tipo: 'sucesso', texto: `"${codigoFoto}" removido. Pode levar alguns segundos pra sumir do catálogo.` })
+      setCodigoExcluirManual('')
+      carregarLista()
+      carregarEstoques()
+    } catch {
+      setStatusExcluirManual({ tipo: 'erro', texto: 'Não foi possível excluir agora. Tente novamente.' })
+    } finally {
+      setExcluindoManual(false)
+    }
+  }
+
   function handleSair() {
     sessionStorage.removeItem('mersan_admin_senha')
     window.location.reload()
@@ -732,6 +759,30 @@ function PainelFotos({ senha }) {
         </form>
 
         <div style={styles.listaBox}>
+          <label style={styles.label}>
+            Excluir por código (pra itens que aparecem no catálogo mas não na lista abaixo — sem foto cadastrada)
+            <div style={styles.linhaCodigo}>
+              <input
+                type="text"
+                value={codigoExcluirManual}
+                onChange={(e) => setCodigoExcluirManual(e.target.value)}
+                placeholder="Cole aqui o código do produto fantasma"
+                style={{ ...styles.input, flex: 1 }}
+              />
+              <button
+                type="button"
+                onClick={handleExcluirManual}
+                style={styles.botaoExcluir}
+                disabled={excluindoManual || !codigoExcluirManual.trim()}
+              >
+                {excluindoManual ? 'Excluindo…' : 'Excluir'}
+              </button>
+            </div>
+          </label>
+          {statusExcluirManual && (
+            <p style={statusExcluirManual.tipo === 'erro' ? styles.erro : styles.sucesso}>{statusExcluirManual.texto}</p>
+          )}
+
           <button
             type="button"
             onClick={() => setListaAberta((v) => !v)}
