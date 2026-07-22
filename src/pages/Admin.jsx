@@ -104,6 +104,7 @@ function PainelFotos({ senha }) {
   const [limiteExibicao, setLimiteExibicao] = useState(50)
   const [abaAtiva, setAbaAtiva] = useState('cadastradas')
   const [estoquePorCodigo, setEstoquePorCodigo] = useState({})
+  const [listaAberta, setListaAberta] = useState(false)
 
   const carregarLista = useCallback(async () => {
     setCarregandoLista(true)
@@ -731,6 +732,16 @@ function PainelFotos({ senha }) {
         </form>
 
         <div style={styles.listaBox}>
+          <button
+            type="button"
+            onClick={() => setListaAberta((v) => !v)}
+            style={styles.botaoAbrirLista}
+          >
+            {listaAberta ? '▾' : '▸'} {fotosNormais.length + fotosEsgotadas.length} produtos cadastrados — clique para {listaAberta ? 'fechar' : 'abrir'} a lista
+          </button>
+
+          {listaAberta && (
+          <>
           <div style={styles.abas}>
             <button
               type="button"
@@ -907,6 +918,8 @@ function PainelFotos({ senha }) {
             >
               Carregar mais 50 (faltam {fotosExibidas.length - limiteExibicao})
             </button>
+          )}
+          </>
           )}
         </div>
 
@@ -1383,6 +1396,18 @@ const styles = {
     width: '18px',
     height: '18px',
     flexShrink: 0,
+    cursor: 'pointer'
+  },
+  botaoAbrirLista: {
+    width: '100%',
+    textAlign: 'left',
+    padding: '14px 16px',
+    fontSize: '14px',
+    fontWeight: 700,
+    color: '#111111',
+    background: '#f7f7f8',
+    border: '1px solid #ececec',
+    borderRadius: '10px',
     cursor: 'pointer'
   }
     }
