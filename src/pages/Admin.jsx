@@ -296,6 +296,11 @@ function PainelFotos({ senha }) {
 
   // Calcula a(s) categoria(s) de um item da planilha.
   //
+  // Chuteira é categoria própria, com prioridade máxima: qualquer item com
+  // linha "CHUTEIRA" vira só "Chuteira", independente de gênero ou faixa
+  // etária — igual à Unisex, pra nenhuma chuteira ficar de fora só por
+  // causa de gênero ausente/errado na planilha.
+  //
   // Unisex é categoria própria (não duplica mais em Masculino + Feminino):
   // qualquer item com gênero UNISEX/UNISSEX vira só "Unissex", independente
   // de linha ou faixa etária.
@@ -305,6 +310,11 @@ function PainelFotos({ senha }) {
   // "INFANTIL") > Esportivo (linha "ESPORTE") > Casual (nenhuma das
   // anteriores — era exibido "nu", sem rótulo de linha; agora é explícito).
   function calcularCategoriasPlanilha(faixaEtaria, genero, linha) {
+    const linhaNormalizada = (linha || '').trim().toUpperCase()
+    if (linhaNormalizada === 'CHUTEIRA') {
+      return ['Chuteira']
+    }
+
     const generoNormalizado = (genero || '').trim().toUpperCase()
 
     if (generoNormalizado === 'UNISEX' || generoNormalizado === 'UNISSEX') {
@@ -315,7 +325,6 @@ function PainelFotos({ senha }) {
       return []
     }
 
-    const linhaNormalizada = (linha || '').trim().toUpperCase()
     const corrida = linhaNormalizada === 'CORRIDA'
     const infantil = (faixaEtaria || '').trim().toUpperCase() === 'INFANTIL'
     const esportivo = linhaNormalizada === 'ESPORTE'
