@@ -296,10 +296,14 @@ function PainelFotos({ senha }) {
 
   // Calcula a(s) categoria(s) de um item da planilha.
   //
-  // Chuteira é categoria própria, com prioridade máxima: qualquer item com
-  // linha "CHUTEIRA" vira só "Chuteira", independente de gênero ou faixa
-  // etária — igual à Unisex, pra nenhuma chuteira ficar de fora só por
-  // causa de gênero ausente/errado na planilha.
+  // Chuteira é categoria própria, com prioridade máxima, e não depende só
+  // da coluna Linha: se a Descrição do produto contiver "chuteira" (em
+  // qualquer caixa), vira "Chuteira" mesmo que a Linha diga outra coisa
+  // (ex: "ESPORTE") — mais robusto que confiar só no cadastro da Mersan.
+  // Sem esse sinal no nome, cai pra Chuteira mesmo assim se a Linha for
+  // "FUTEBOL". Nos dois casos, independente de gênero ou faixa etária —
+  // igual à Unisex, pra nenhuma chuteira ficar de fora só por causa de
+  // gênero ausente/errado na planilha.
   //
   // Unisex é categoria própria (não duplica mais em Masculino + Feminino):
   // qualquer item com gênero UNISEX/UNISSEX vira só "Unissex", independente
@@ -309,9 +313,10 @@ function PainelFotos({ senha }) {
   // mais alta pra mais baixa): Corrida (linha "CORRIDA") > Infantil (faixa
   // "INFANTIL") > Esportivo (linha "ESPORTE") > Casual (nenhuma das
   // anteriores — era exibido "nu", sem rótulo de linha; agora é explícito).
-  function calcularCategoriasPlanilha(faixaEtaria, genero, linha) {
+  function calcularCategoriasPlanilha(descricao, faixaEtaria, genero, linha) {
+    const descricaoNormalizada = (descricao || '').toUpperCase()
     const linhaNormalizada = (linha || '').trim().toUpperCase()
-    if (linhaNormalizada === 'CHUTEIRA') {
+    if (descricaoNormalizada.includes('CHUTEIRA') || linhaNormalizada === 'FUTEBOL') {
       return ['Chuteira']
     }
 
@@ -366,6 +371,7 @@ function PainelFotos({ senha }) {
 
     const cabecalho = parseLinha(linhas[0]).map((c) => c.toLowerCase())
     const idxCodigo = cabecalho.findIndex((c) => c.includes('código') || c.includes('codigo'))
+    const idxDescricao = cabecalho.findIndex((c) => c.includes('descrição') || c.includes('descricao'))
     const idxFaixa = cabecalho.findIndex((c) => c.includes('faixa'))
     const idxGenero = cabecalho.findIndex((c) => c.includes('gênero') || c.includes('genero'))
     const idxLinha = cabecalho.findIndex((c) => c.includes('linha'))
@@ -377,6 +383,7 @@ function PainelFotos({ senha }) {
       if (!codigo) continue
       registros.push({
         codigo,
+        descricao: idxDescricao >= 0 ? campos[idxDescricao] : '',
         faixaEtaria: idxFaixa >= 0 ? campos[idxFaixa] : '',
         genero: idxGenero >= 0 ? campos[idxGenero] : '',
         linha: idxLinha >= 0 ? campos[idxLinha] : ''
@@ -410,7 +417,7 @@ function PainelFotos({ senha }) {
 
       const mapa = {}
       for (const registro of registros) {
-        const categorias = calcularCategoriasPlanilha(registro.faixaEtaria, registro.genero, registro.linha)
+        const categorias = calcularCategoriasPlanilha(registro.descricao, registro.faixaEtaria, registro.genero, registro.linha)
         if (categorias.length === 0) continue
         mapa[registro.codigo] = categorias.join(', ')
       }
@@ -923,7 +930,9 @@ function PainelFotos({ senha }) {
         <div style={styles.listaBox}>
           <h2 style={styles.subtitulo}>Planilha de Gêneros</h2>
           <p style={styles.vazio}>
-            Sobe a planilha (CSV) com as colunas Código, Faixa Etária, Gênero e Linha.
+            Sobe a planilha (CSV) com as colunas Código, Descrição, Faixa Etária, Gênero e Linha
+            (Descrição é opcional, mas se vier, produtos com "chuteira" no nome viram categoria
+            Chuteira automaticamente, independente da Linha).
             Ao salvar, a categoria já é reaplicada automaticamente em todos os produtos
             cadastrados — não precisa clicar em "Recalcular categorias" depois. O botão
             abaixo continua disponível como reforço manual, se precisar.
