@@ -1,14 +1,13 @@
 // ApiService: ponto único de contato com o backend/proxy do catálogo.
 // O front NUNCA chama credito.mersan.co diretamente — sempre passa pelo
 // Worker em /worker/index.js, que esconde a API real, resolve CORS e
-// cacheia por 30 minutos.
+// controla o cache (borda + revalidação em segundo plano). Não há mais
+// cache no navegador aqui — o frescor é responsabilidade só do Worker.
 //
 // Fluxo real (descoberto via DevTools no sistema "Busca Preço" da própria
 // Mersan): primeiro busca os dados do produto (que já trazem nome, cor,
 // preço, e o número de referência no formato que a API de estoque espera),
 // depois usa essa referência para buscar o estoque.
-
-import { getCached, setCached } from './cache'
 
 const LOJA = 261 // nunca exibir outras lojas
 
@@ -18,10 +17,6 @@ class ApiService {
    * usada pelo endpoint de estoque).
    */
   static async buscarDadosProduto(termo) {
-    const cacheKey = `produto_${termo}`
-    const cached = getCached(cacheKey)
-    if (cached) return cached
-
     const resp = await fetch(`/api/produto?termo=${encodeURIComponent(termo)}`)
     const data = await safeJson(resp)
 
@@ -29,7 +24,6 @@ class ApiService {
       throw new Error(data?.error || 'Produto não encontrado.')
     }
 
-    setCached(cacheKey, data)
     return data
   }
 
@@ -37,14 +31,10 @@ class ApiService {
    * Consulta o estoque de uma referência (de uma cor específica) na loja
    * 261, via proxy. A cor é obrigatória na prática: a mesma referência pode
    * ser compartilhada por mais de uma cor na Mersan, então sem a cor o
-   * estoque de uma cor pode "vazar" pra outra — e o cache local colidiria
-   * entre elas se usasse só a referência como chave.
+   * estoque de uma cor pode "vazar" pra outra — e o cache do Worker
+   * colidiria entre elas se a URL não incluísse a cor.
    */
   static async buscarEstoque(referencia, cor) {
-    const cacheKey = `estoque_${referencia}_${cor || ''}`
-    const cached = getCached(cacheKey)
-    if (cached) return cached
-
     const params = new URLSearchParams({ referencia })
     if (cor) params.set('cor', cor)
 
@@ -55,7 +45,6 @@ class ApiService {
       throw new Error(data?.error || 'Não foi possível consultar o estoque.')
     }
 
-    setCached(cacheKey, data)
     return data
   }
 

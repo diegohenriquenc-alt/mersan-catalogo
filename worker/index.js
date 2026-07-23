@@ -14,7 +14,8 @@
 
 const MERSAN_BASE = 'https://credito.mersan.co/api/v1'
 const LOJA = 261
-const CACHE_TTL_SECONDS = 5 * 60 // 5 minutos — janela curta pra numeração/estoque nunca ficarem desatualizados por muito tempo (ex: produto vendido na loja física)
+const CACHE_TTL_SECONDS = 5 * 60 // 5 minutos — teto: acima disso o cache.match nem encontra mais a entrada
+const CACHE_TTL_SOFT_SECONDS = 90 // 1,5 min — acima disso (mas ainda dentro do teto) serve o cache normalmente e revalida em segundo plano, sem atrasar o cliente
 const PARCELA_MINIMA = 29.99
 const MAX_PARCELAS = 10
 
@@ -203,6 +204,17 @@ async function buscarDadosProdutoMersan(termo, signal) {
   }
 }
 
+// Lê o instante em que uma entrada do cache de borda foi gravada (guardado
+// num cabeçalho próprio na própria resposta cacheada) e devolve a idade dela
+// em segundos. Sem o cabeçalho (não deveria acontecer, mas é defensivo),
+// trata como "muito velha" pra forçar revalidação em vez de confiar cego.
+function idadeDoCacheEmSegundos(respostaCache) {
+  const timestamp = respostaCache.headers.get('X-Cache-Atualizado-Em')
+  if (!timestamp) return Infinity
+  const idadeMs = Date.now() - new Date(timestamp).getTime()
+  return idadeMs / 1000
+}
+
 async function handleProduto(request, url, ctx) {
   const termo = url.searchParams.get('termo')
 
@@ -227,6 +239,11 @@ async function handleProduto(request, url, ctx) {
 
   const cached = await cache.match(cacheKey)
   if (cached) {
+    // Cache "velho, mas ainda dentro do teto": devolve na hora pro cliente e
+    // busca a versão nova em segundo plano, sem ninguém esperar por isso.
+    if (idadeDoCacheEmSegundos(cached) > CACHE_TTL_SOFT_SECONDS) {
+      ctx.waitUntil(revalidarProdutoEmSegundoPlano(termo, cache, cacheKey))
+    }
     return cached
   }
 
@@ -239,12 +256,30 @@ async function handleProduto(request, url, ctx) {
   }
 
   const response = jsonResponse(payload, 200, {
-    'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`
+    'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`,
+    'X-Cache-Atualizado-Em': new Date().toISOString()
   })
 
   ctx.waitUntil(cache.put(cacheKey, response.clone()))
 
   return response
+}
+
+// Reaproveitada tanto por um cache "velho, mas usável" (revalidação em
+// segundo plano) quanto poderia ser por outros gatilhos no futuro. Se a
+// Mersan falhar aqui, não faz nada — a entrada antiga do cache continua
+// valendo até o teto normal ou até a próxima tentativa.
+async function revalidarProdutoEmSegundoPlano(termo, cache, cacheKey) {
+  try {
+    const payload = await buscarDadosProdutoMersan(termo)
+    const response = jsonResponse(payload, 200, {
+      'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`,
+      'X-Cache-Atualizado-Em': new Date().toISOString()
+    })
+    await cache.put(cacheKey, response)
+  } catch {
+    // Sem fallback nesta fase (fora de escopo) — só não atualiza agora.
+  }
 }
 
 // Busca o estoque bruto da Mersan e já consolida por tamanho: se a mesma
@@ -301,6 +336,11 @@ async function handleEstoque(request, url, ctx) {
 
   const cached = await cache.match(cacheKey)
   if (cached) {
+    // Mesmo princípio do produto: serve o que já tem e revalida em segundo
+    // plano se estiver velho, sem travar a resposta pro cliente.
+    if (idadeDoCacheEmSegundos(cached) > CACHE_TTL_SOFT_SECONDS) {
+      ctx.waitUntil(revalidarEstoqueEmSegundoPlano(referencia, cor, cache, cacheKey))
+    }
     return cached
   }
 
@@ -322,12 +362,35 @@ async function handleEstoque(request, url, ctx) {
   }
 
   const response = jsonResponse(payload, 200, {
-    'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`
+    'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`,
+    'X-Cache-Atualizado-Em': new Date().toISOString()
   })
 
   ctx.waitUntil(cache.put(cacheKey, response.clone()))
 
   return response
+}
+
+// Mesmo padrão de revalidarProdutoEmSegundoPlano, só que pro estoque. Se a
+// Mersan falhar, não faz nada — a entrada antiga do cache continua valendo
+// até o teto normal ou até a próxima tentativa.
+async function revalidarEstoqueEmSegundoPlano(referencia, cor, cache, cacheKey) {
+  try {
+    const estoqueLoja261 = await buscarEstoqueMersan(referencia, cor)
+    const payload = {
+      referencia,
+      loja: LOJA,
+      estoque: estoqueLoja261,
+      atualizadoEm: new Date().toISOString()
+    }
+    const response = jsonResponse(payload, 200, {
+      'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`,
+      'X-Cache-Atualizado-Em': new Date().toISOString()
+    })
+    await cache.put(cacheKey, response)
+  } catch {
+    // Sem fallback nesta fase (fora de escopo) — só não atualiza agora.
+  }
 }
 
 // ---------- Página do produto com Open Graph dinâmico (Etapa 4) ----------
@@ -1258,7 +1321,7 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
 
 const CATALOGO_CACHE_CHAVE = '_catalogo_pronto'
 const CATALOGO_CURSOR_CHAVE = '_catalogo_cursor'
-const CATALOGO_LOTE_TAMANHO = 10
+const CATALOGO_LOTE_TAMANHO = 20
 const CATALOGO_LOTE_PREFIXO = '_catalogo_lote_'
 const CATALOGO_NOVOS_CHAVE = '_catalogo_novos'
 
