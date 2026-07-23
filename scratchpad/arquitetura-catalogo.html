@@ -1,0 +1,644 @@
+<title>Arquitetura do Catálogo Mersan</title>
+<style>
+  :root{
+    --bg:#f5f3ee;
+    --bg-raised:#ffffff;
+    --ink:#1c1b1a;
+    --ink-soft:#55524c;
+    --ink-faint:#8a867c;
+    --rule:#dcd8cd;
+    --rule-strong:#c7c2b4;
+    --accent:#e0002a;
+    --accent-ink:#ffffff;
+    --stay:#3f6b52;
+    --stay-bg:#e7efe9;
+    --change:#a8660b;
+    --change-bg:#f6ecdb;
+    --new:#8a2f6b;
+    --new-bg:#f3e4ee;
+    --grid-line: rgba(28,27,26,0.035);
+    --shadow: 0 1px 2px rgba(28,27,26,0.06), 0 8px 24px -12px rgba(28,27,26,0.12);
+    --font-display: "Neue Haas Grotesk Display Pro","Helvetica Neue",Arial,sans-serif;
+    --font-body: Georgia,"Iowan Old Style","Palatino Linotype","Book Antiqua",serif;
+    --font-mono: ui-monospace,"SF Mono","Cascadia Code",Consolas,"Liberation Mono",monospace;
+  }
+  :root[data-theme="dark"]{
+    --bg:#17161a;
+    --bg-raised:#201f24;
+    --ink:#eeece6;
+    --ink-soft:#b6b2a8;
+    --ink-faint:#817d74;
+    --rule:#332f37;
+    --rule-strong:#433e47;
+    --accent:#ff3355;
+    --accent-ink:#17161a;
+    --stay:#7fbf9d;
+    --stay-bg:#1d2a22;
+    --change:#e0a750;
+    --change-bg:#2c2418;
+    --new:#d488bd;
+    --new-bg:#2a1f27;
+    --grid-line: rgba(238,236,230,0.04);
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 12px 32px -14px rgba(0,0,0,0.55);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#17161a;
+      --bg-raised:#201f24;
+      --ink:#eeece6;
+      --ink-soft:#b6b2a8;
+      --ink-faint:#817d74;
+      --rule:#332f37;
+      --rule-strong:#433e47;
+      --accent:#ff3355;
+      --accent-ink:#17161a;
+      --stay:#7fbf9d;
+      --stay-bg:#1d2a22;
+      --change:#e0a750;
+      --change-bg:#2c2418;
+      --new:#d488bd;
+      --new-bg:#2a1f27;
+      --grid-line: rgba(238,236,230,0.04);
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 12px 32px -14px rgba(0,0,0,0.55);
+    }
+  }
+
+  *{ box-sizing:border-box; }
+  html{ background:var(--bg); }
+  body{
+    margin:0;
+    background:
+      linear-gradient(var(--grid-line) 1px, transparent 1px) 0 0/100% 32px,
+      var(--bg);
+    color:var(--ink);
+    font-family:var(--font-body);
+    font-size:17px;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{ color:var(--accent); text-decoration-thickness:1px; text-underline-offset:2px; }
+  a:focus-visible, button:focus-visible, summary:focus-visible{
+    outline:2px solid var(--accent); outline-offset:2px; border-radius:2px;
+  }
+
+  .wrap{ max-width:800px; margin:0 auto; padding:64px 24px 120px; }
+
+  header.doc-head{
+    border-bottom:1px solid var(--rule-strong);
+    padding-bottom:36px;
+    margin-bottom:44px;
+  }
+  .eyebrow{
+    font-family:var(--font-mono);
+    font-size:12px;
+    letter-spacing:.10em;
+    text-transform:uppercase;
+    color:var(--accent);
+    font-weight:600;
+    margin:0 0 14px;
+  }
+  h1{
+    font-family:var(--font-display);
+    font-weight:800;
+    font-size:clamp(30px,4.4vw,44px);
+    line-height:1.08;
+    letter-spacing:-0.015em;
+    margin:0 0 14px;
+    text-wrap:balance;
+  }
+  .doc-sub{
+    font-family:var(--font-body);
+    font-style:italic;
+    color:var(--ink-soft);
+    font-size:18px;
+    max-width:62ch;
+    margin:0 0 20px;
+  }
+  .meta-row{
+    display:flex; flex-wrap:wrap; gap:10px 22px;
+    font-family:var(--font-mono); font-size:12.5px; color:var(--ink-faint);
+  }
+  .meta-row b{ color:var(--ink-soft); font-weight:600; }
+
+  .scope-note{
+    background:var(--bg-raised);
+    border:1px solid var(--rule);
+    border-left:3px solid var(--accent);
+    border-radius:3px;
+    padding:14px 18px;
+    margin:26px 0 0;
+    font-family:var(--font-mono);
+    font-size:13px;
+    color:var(--ink-soft);
+    line-height:1.55;
+  }
+
+  h2{
+    font-family:var(--font-display);
+    font-weight:800;
+    font-size:24px;
+    letter-spacing:-0.01em;
+    margin:0 0 6px;
+    text-wrap:balance;
+    scroll-margin-top:24px;
+  }
+  h3{
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:16.5px;
+    margin:26px 0 8px;
+  }
+  .section-index{
+    font-family:var(--font-mono);
+    font-size:12px;
+    color:var(--ink-faint);
+    letter-spacing:.06em;
+    margin:0 0 4px;
+  }
+  section{ margin:64px 0; }
+  section > p{ max-width:66ch; }
+  p{ margin:0 0 14px; color:var(--ink); }
+  .lede{ font-size:18px; color:var(--ink-soft); max-width:64ch; }
+
+  /* Table of contents */
+  nav.toc{
+    background:var(--bg-raised);
+    border:1px solid var(--rule);
+    border-radius:6px;
+    padding:20px 24px;
+    margin:0 0 8px;
+    box-shadow:var(--shadow);
+  }
+  nav.toc .toc-title{
+    font-family:var(--font-mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--ink-faint); margin:0 0 12px;
+  }
+  nav.toc ol{ margin:0; padding:0; list-style:none; columns:2; column-gap:28px; }
+  nav.toc li{ break-inside:avoid; margin-bottom:9px; }
+  nav.toc a{
+    color:var(--ink); text-decoration:none; font-size:14.5px; display:flex; gap:8px;
+    align-items:baseline;
+  }
+  nav.toc a:hover{ color:var(--accent); }
+  nav.toc .num{ font-family:var(--font-mono); color:var(--ink-faint); font-size:12px; min-width:16px; }
+
+  /* status pills */
+  .pill{
+    display:inline-flex; align-items:center; gap:5px;
+    font-family:var(--font-mono); font-size:11px; font-weight:600;
+    letter-spacing:.03em; text-transform:uppercase;
+    padding:3px 9px; border-radius:99px;
+    white-space:nowrap;
+  }
+  .pill.stay{ background:var(--stay-bg); color:var(--stay); }
+  .pill.change{ background:var(--change-bg); color:var(--change); }
+  .pill.new{ background:var(--new-bg); color:var(--new); }
+  .pill::before{ content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .legend{ display:flex; gap:18px; flex-wrap:wrap; margin:14px 0 0; }
+  .legend span.lbl{ font-family:var(--font-mono); font-size:12.5px; color:var(--ink-soft); margin-left:2px; }
+  .legend .item{ display:flex; align-items:center; }
+
+  /* layer stack diagram */
+  .stack{
+    display:flex; flex-direction:column; gap:2px;
+    border:1px solid var(--rule); border-radius:8px; overflow:hidden;
+    box-shadow:var(--shadow); background:var(--rule);
+  }
+  .stack .layer{
+    background:var(--bg-raised);
+    padding:16px 20px;
+    display:grid;
+    grid-template-columns:auto 1fr auto;
+    gap:6px 16px;
+    align-items:baseline;
+  }
+  .stack .layer .lname{ font-family:var(--font-display); font-weight:700; font-size:15px; }
+  .stack .layer .ldesc{
+    grid-column:1 / -1; font-size:14px; color:var(--ink-soft); font-family:var(--font-body);
+    margin-top:2px;
+  }
+  .stack .arrow{
+    text-align:center; font-family:var(--font-mono); font-size:11px; color:var(--ink-faint);
+    background:var(--bg); padding:3px 0;
+  }
+
+  /* layer detail cards */
+  .layer-card{
+    border:1px solid var(--rule);
+    border-radius:8px;
+    background:var(--bg-raised);
+    padding:22px 26px 24px;
+    box-shadow:var(--shadow);
+  }
+  .layer-card + .layer-card{ margin-top:18px; }
+  .layer-card-head{
+    display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+    margin-bottom:4px;
+  }
+  .layer-card h3{ margin:0; font-size:18px; }
+  .kv{
+    display:grid; grid-template-columns:110px 1fr; gap:6px 16px; margin-top:14px;
+  }
+  .kv dt{
+    font-family:var(--font-mono); font-size:11px; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--ink-faint); padding-top:3px;
+  }
+  .kv dd{ margin:0; font-size:15px; }
+
+  code, .filecite{
+    font-family:var(--font-mono);
+    font-size:.86em;
+    background:var(--grid-line);
+    padding:1px 5px;
+    border-radius:3px;
+    color:var(--ink-soft);
+    white-space:nowrap;
+  }
+  :root[data-theme="dark"] code, :root[data-theme="dark"] .filecite{ background:rgba(255,255,255,0.06); }
+
+  ul.plain{ margin:0 0 14px; padding-left:20px; }
+  ul.plain li{ margin-bottom:6px; }
+  ul.check{ list-style:none; margin:14px 0; padding:0; display:flex; flex-direction:column; gap:8px; }
+  ul.check li{ display:flex; gap:10px; align-items:flex-start; font-size:15px; }
+  ul.check li::before{ content:"—"; color:var(--stay); font-family:var(--font-mono); flex-shrink:0; }
+
+  table{ width:100%; border-collapse:collapse; margin:18px 0; font-size:14.5px; }
+  th, td{ text-align:left; padding:10px 14px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  th{ font-family:var(--font-mono); font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-faint); font-weight:600; }
+  td.num, th.num{ font-family:var(--font-mono); font-variant-numeric:tabular-nums; }
+  tbody tr:last-child td{ border-bottom:none; }
+  .table-wrap{ overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--bg-raised); box-shadow:var(--shadow); }
+  .table-wrap table{ margin:0; min-width:560px; }
+  .table-wrap th, .table-wrap td{ padding:12px 16px; }
+  td.better{ color:var(--stay); font-weight:600; }
+
+  blockquote.finding{
+    margin:18px 0; padding:14px 18px; border-left:3px solid var(--accent);
+    background:var(--bg-raised); border-radius:0 6px 6px 0; font-size:14.5px; color:var(--ink-soft);
+    box-shadow:var(--shadow);
+  }
+  blockquote.finding b{ color:var(--ink); }
+
+  .divider{ border:none; border-top:1px solid var(--rule); margin:56px 0; }
+
+  footer{
+    margin-top:80px; padding-top:24px; border-top:1px solid var(--rule);
+    font-family:var(--font-mono); font-size:12px; color:var(--ink-faint);
+  }
+
+  @media (max-width:640px){
+    nav.toc ol{ columns:1; }
+    .stack .layer{ grid-template-columns:1fr; }
+    .kv{ grid-template-columns:1fr; }
+    .kv dt{ padding-top:0; }
+  }
+
+  @media (prefers-reduced-motion:no-preference){
+    section{ animation:rise .5s ease-out both; }
+    @keyframes rise{ from{ opacity:0; transform:translateY(6px);} to{ opacity:1; transform:none; } }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="doc-head">
+    <p class="eyebrow">Documento de arquitetura · somente proposta, nada implementado</p>
+    <h1>Arquitetura ideal do catálogo Mersan</h1>
+    <p class="doc-sub">Como reduzir ao máximo a desatualização das numerações — sem piorar desempenho, estabilidade ou custo — reaproveitando o que já existe hoje.</p>
+    <div class="meta-row">
+      <span><b>Escopo</b> Cloudflare · Worker · KV · cache de borda · cache do navegador · API da Mersan · vitrine · produto · carrinho</span>
+      <span><b>Base</b> 4 análises anteriores + medição real de latência da API da Mersan</span>
+    </div>
+    <p class="scope-note">Este documento não altera nenhum arquivo do projeto. É a síntese de tudo que foi levantado nas conversas anteriores em uma única proposta de arquitetura, para servir de referência caso decida implementar.</p>
+  </header>
+
+  <nav class="toc" aria-label="Sumário">
+    <p class="toc-title">Sumário</p>
+    <ol>
+      <li><a href="#principios"><span class="num">00</span> Princípios da proposta</a></li>
+      <li><a href="#panorama"><span class="num">01</span> Panorama da arquitetura</a></li>
+      <li><a href="#cloudflare"><span class="num">02</span> Cloudflare (borda)</a></li>
+      <li><a href="#worker"><span class="num">03</span> Worker</a></li>
+      <li><a href="#kv"><span class="num">04</span> KV</a></li>
+      <li><a href="#cache-borda"><span class="num">05</span> Cache de borda</a></li>
+      <li><a href="#cache-navegador"><span class="num">06</span> Cache do navegador</a></li>
+      <li><a href="#mersan"><span class="num">07</span> API da Mersan</a></li>
+      <li><a href="#produto"><span class="num">08</span> Página do produto</a></li>
+      <li><a href="#vitrine"><span class="num">09</span> Vitrine</a></li>
+      <li><a href="#carrinho"><span class="num">10</span> Carrinho</a></li>
+      <li><a href="#admin"><span class="num">11</span> Painel admin</a></li>
+      <li><a href="#numeros"><span class="num">12</span> Números-alvo</a></li>
+      <li><a href="#igual"><span class="num">13</span> O que não muda</a></li>
+      <li><a href="#riscos"><span class="num">14</span> Riscos e limites</a></li>
+    </ol>
+  </nav>
+
+  <!-- 00 -->
+  <section id="principios">
+    <p class="section-index">00 — Fundamentos</p>
+    <h2>Princípios que orientam cada decisão</h2>
+    <p class="lede">Toda escolha abaixo responde a um destes quatro critérios. Quando duas soluções pareciam razoáveis, o critério decidiu.</p>
+    <ul class="check">
+      <li><b>Nunca bloquear o cliente pela instabilidade da Mersan.</b> A API de estoque mediu média de ~11s, pico de 26s e ~20% de falha numa amostra real. Nenhuma chamada a ela pode ficar no caminho de uma resposta que o cliente está esperando.</li>
+      <li><b>Concentrar esforço onde o risco de negócio é maior.</b> Um produto com estoque baixo, sendo olhado agora, importa muito mais do que um produto parado com estoque folgado — o orçamento de atualização deve refletir isso.</li>
+      <li><b>A inteligência mora no Worker, não em cada tela.</b> Hoje a vitrine, o carrinho e a página do produto tratam cache de formas diferentes por acidente histórico, não por decisão. Centralizar no Worker resolve as três de uma vez.</li>
+      <li><b>Não gastar complexidade onde a desatualização não dói.</b> Nem todo produto precisa do mesmo rigor — isso é o que mantém o custo sob controle.</li>
+    </ul>
+  </section>
+
+  <!-- 01 -->
+  <section id="panorama">
+    <p class="section-index">01 — Visão geral</p>
+    <h2>O caminho de uma consulta de numeração</h2>
+    <p>Da esquerda (cliente) para a direita (Mersan), esta é a ordem em que uma consulta passa pelas camadas propostas. As cores indicam o que muda em relação a hoje.</p>
+    <div class="legend">
+      <span class="item"><span class="pill stay">permanece</span></span>
+      <span class="item"><span class="pill change">muda</span></span>
+      <span class="item"><span class="pill new">novo</span></span>
+    </div>
+    <br/>
+    <div class="stack">
+      <div class="layer">
+        <span class="lname">Cliente (vitrine · produto · carrinho)</span>
+        <span class="pill change">muda</span>
+        <span class="ldesc">As três telas passam a chamar as mesmas rotas do Worker do mesmo jeito — sem lógica própria de cache. O <code>localStorage</code> de 30 min some da página do produto.</span>
+      </div>
+      <div class="arrow">↓ requisição HTTP</div>
+      <div class="layer">
+        <span class="lname">Worker — roteamento</span>
+        <span class="pill stay">permanece</span>
+        <span class="ldesc">Mesmas rotas, mesmos arquivos, mesma responsabilidade de esconder a Mersan do navegador e resolver CORS.</span>
+      </div>
+      <div class="arrow">↓</div>
+      <div class="layer">
+        <span class="lname">Worker — decisão de frescor</span>
+        <span class="pill new">novo</span>
+        <span class="ldesc">Camada nova: decide, por produto, se o cache atual está "fresco o bastante" ou se deve disparar uma revalidação em segundo plano — sem nunca atrasar a resposta.</span>
+      </div>
+      <div class="arrow">↓ serve cache · dispara revalidação em paralelo se preciso</div>
+      <div class="layer">
+        <span class="lname">Cache de borda (Cloudflare Cache API)</span>
+        <span class="pill change">muda</span>
+        <span class="ldesc">Continua existindo do mesmo jeito técnico, mas passa a ter dois limiares (curto/duro) em vez de um TTL único, e um limiar mais curto para itens de estoque baixo.</span>
+      </div>
+      <div class="arrow">↓ (só em cache miss ou revalidação)</div>
+      <div class="layer">
+        <span class="lname">KV — lotes do catálogo + cópia de segurança</span>
+        <span class="pill change">muda</span>
+        <span class="ldesc">Lotes maiores (ciclo mais curto) e uma gaveta nova: a última leitura válida por produto, usada só se a Mersan falhar.</span>
+      </div>
+      <div class="arrow">↓ (só quando não há nada aproveitável em cache/KV)</div>
+      <div class="layer">
+        <span class="lname">API da Mersan</span>
+        <span class="pill stay">permanece</span>
+        <span class="ldesc">Sistema externo, fora de controle deste projeto. A arquitetura se organiza inteira em volta da instabilidade medida dela — não tenta mudá-la.</span>
+      </div>
+    </div>
+  </section>
+
+  <hr class="divider" />
+
+  <p class="section-index">02 – 11 — Camada por camada</p>
+  <h2 style="margin-bottom:28px;">Detalhamento por camada</h2>
+
+  <!-- 02 Cloudflare -->
+  <section id="cloudflare">
+    <div class="layer-card">
+      <div class="layer-card-head">
+        <h3>02 · Cloudflare (borda / plano / cron)</h3>
+        <span class="pill stay">permanece</span>
+      </div>
+      <dl class="kv">
+        <dt>Papel</dt><dd>Hospeda o Worker, roda o gatilho agendado, replica o KV globalmente e mantém o cache de borda por data center.</dd>
+        <dt>O que fica</dt><dd>A infraestrutura em si: Worker + assets estáticos + KV + Cache API, exatamente como configurado em <code>wrangler.jsonc</code>.</dd>
+        <dt>O que muda</dt><dd>Nada na infraestrutura — só o <em>uso</em> que o código faz dela (detalhado nas camadas seguintes).</dd>
+        <dt>Pré-requisito</dt><dd>Confirmar o plano contratado (Free ou Paid) antes de calibrar os números finais de lote/sub-requisições — o teto de sub-requisições por execução é 50 no Free e 1.000 no Paid, e isso muda o tamanho de lote seguro.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <!-- 03 Worker -->
+  <section id="worker">
+    <div class="layer-card">
+      <div class="layer-card-head">
+        <h3>03 · Worker (<code>worker/index.js</code>)</h3>
+        <span class="pill change">muda</span>
+      </div>
+      <dl class="kv">
+        <dt>Papel</dt><dd>Único ponto de contato com a Mersan; esconde a URL real, resolve CORS, decide o que cachear e por quanto tempo.</dd>
+        <dt>O que fica</dt><dd>Todas as rotas atuais, a estrutura de <code>handleProduto</code> / <code>handleEstoque</code>, e o padrão de responder rápido e continuar trabalhando em segundo plano com <code>ctx.waitUntil</code> — esse padrão já existe hoje, só passa a ser usado de forma mais ampla.</dd>
+        <dt>O que muda</dt><dd>
+          <ul class="plain">
+            <li><code>handleProduto</code>/<code>handleEstoque</code> passam a checar a <em>idade</em> da entrada em cache (usando o campo <code>atualizadoEm</code> que já existe no payload) e não só se ela existe.</li>
+            <li>Se a entrada estiver "velha, mas ainda dentro do limite" → serve normalmente e dispara revalidação em segundo plano daquele produto específico.</li>
+            <li>Uma rota administrativa nova, de baixo risco, do tipo <code>/api/admin/produto-atualizar?codigo=…</code> — extensão de granularidade do que <code>handleCatalogoForcar</code> já faz hoje para um lote inteiro.</li>
+            <li>O cabeçalho <code>Cache-Control: max-age=120</code> em <code>/api/catalogo</code> (hoje sem efeito, porque o front sempre cacheia-busta a URL) é removido ou corrigido — só higiene, não afeta comportamento.</li>
+          </ul>
+        </dd>
+      </dl>
+    </div>
+  </section>
+
+  <!-- 04 KV -->
+  <section id="kv">
+    <div class="layer-card">
+      <div class="layer-card-head">
+        <h3>04 · KV (<code>env.FOTOS</code>)</h3>
+        <span class="pill change">muda</span>
+      </div>
+      <dl class="kv">
+        <dt>Papel</dt><dd>Guarda fotos, vendedores, e os "lotes" prontos do catálogo (<code>_catalogo_lote_N</code>) que alimentam a vitrine sem recalcular nada a cada visita.</dd>
+        <dt>O que fica</dt><dd>A estrutura de lotes, o cursor de rodízio (<code>_catalogo_cursor</code>) e o cron a cada 5 minutos — <b>a frequência do cron não muda</b>, de propósito.</dd>
+        <dt>O que muda</dt><dd>
+          <ul class="plain">
+            <li><code>CATALOGO_LOTE_TAMANHO</code> sobe de 10 para algo como 20-24 (Free) ou bem mais alto (Paid) — encurta o ciclo completo da vitrine sem tocar na frequência do cron.</li>
+            <li>Uma gaveta nova, pequena: última leitura válida de estoque por produto, independente do TTL do cache de borda — é a rede de segurança contra falha da Mersan (ver seção 07).</li>
+            <li>A revalidação em segundo plano de um produto específico (disparada pela página do produto/carrinho) passa também a corrigir a entrada daquele produto dentro do seu lote — a vitrine fica certa para qualquer item que alguém realmente esteja olhando, sem esperar o rodízio chegar nele.</li>
+          </ul>
+        </dd>
+        <dt>Por que não a frequência</dt><dd>O cron já faz 3 gravações fixas de KV a cada execução (lote, índice, cursor). A 5 min, isso já soma ~864 gravações/dia — perto do teto histórico de 1.000/dia do plano gratuito do Workers KV. Aumentar a frequência multiplicaria essa conta; aumentar o tamanho do lote não — por isso o lote é a alavanca certa, não o intervalo.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <!-- 05 cache de borda -->
+  <section id="cache-borda">
+    <div class="layer-card">
+      <div class="layer-card-head">
+        <h3>05 · Cache de borda (Cloudflare Cache API)</h3>
+        <span class="pill change">muda</span>
+      </div>
+      <dl class="kv">
+        <dt>Papel</dt><dd>Guarda a última resposta de <code>/api/produto</code> e <code>/api/estoque</code> por data center, evitando bater na Mersan a cada requisição.</dd>
+        <dt>O que fica</dt><dd>O mecanismo em si (<code>caches.default</code>, <code>cache.match</code>/<code>cache.put</code>) e um teto "duro" de segurança — nenhuma entrada sobrevive indefinidamente mesmo sem nenhum gatilho de acesso.</dd>
+        <dt>O que muda</dt><dd>Um único TTL fixo de 5 minutos vira <b>dois limiares</b>:
+          <ul class="plain">
+            <li><b>Limiar duro</b> (~5 min, igual a hoje): acima disso, o dado é considerado velho demais para servir sem checar a Mersan.</li>
+            <li><b>Limiar suave</b> (~60-90s para a maioria dos produtos; ~15-20s para produtos já identificados com estoque baixo): acima disso, ainda serve do cache, mas dispara revalidação em segundo plano.</li>
+          </ul>
+        </dd>
+        <dt>Nuance técnica</dt><dd>A Cache API do Worker é por data center — atualizar o cache a partir de um acesso em um data center não invalida instantaneamente a cópia guardada em outro. Como a base de clientes é concentrada geograficamente (uma loja física local), isso pesa menos na prática do que pesaria para um negócio global; ainda assim, a correção "de verdade" e global fica por conta do KV (item 04), que replica com consistência eventual em segundos.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <!-- 06 cache navegador -->
+  <section id="cache-navegador">
+    <div class="layer-card">
+      <div class="layer-card-head">
+        <h3>06 · Cache do navegador (<code>localStorage</code>)</h3>
+        <span class="pill change">muda</span>
+      </div>
+      <dl class="kv">
+        <dt>Papel hoje</dt><dd><code>src/services/cache.js</code> guarda respostas por 30 minutos, usado só pelo <code>ApiService</code> — ou seja, só no fluxo da página do produto.</dd>
+        <dt>O que muda</dt><dd>Essa camada é removida do fluxo de estoque/produto. Ela era a maior fonte isolada de desatualização do sistema inteiro (até 30 min, por navegador, sem nenhum sinal de invalidação) e também a causa da maior inconsistência entre telas — carrinho e vitrine nunca a usaram.</dd>
+        <dt>Por que é seguro remover</dt><dd>Porque a inteligência de frescor se move para o Worker (item 03/05). O navegador não precisa mais decidir nada — só pede, e a resposta já vem com o frescor certo. Isso também simplifica o código do front, que deixa de ter uma camada de cache paralela e desalinhada das outras telas.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <!-- 07 mersan -->
+  <section id="mersan">
+    <div class="layer-card">
+      <div class="layer-card-head">
+        <h3>07 · API da Mersan</h3>
+        <span class="pill stay">permanece</span>
+      </div>
+      <dl class="kv">
+        <dt>Papel</dt><dd>Única fonte de verdade real do estoque. Sistema de terceiros, só leitura (pull), sem webhook — nada aqui muda por decisão deste projeto.</dd>
+        <dt>Medido nesta conversa</dt><dd>
+          <div class="table-wrap" style="margin-top:6px;">
+            <table>
+              <thead><tr><th>Endpoint</th><th class="num">Mín.</th><th class="num">Média</th><th class="num">Máx.</th><th class="num">Falha</th></tr></thead>
+              <tbody>
+                <tr><td>Dados do produto</td><td class="num">1,11s</td><td class="num">1,82s</td><td class="num">4,12s</td><td class="num">0%</td></tr>
+                <tr><td>Estoque / numeração</td><td class="num">4,22s</td><td class="num">11,08s</td><td class="num">26,45s</td><td class="num">20%</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </dd>
+        <dt>Causa raiz</dt><dd>A própria API devolve o estoque de <em>todas</em> as lojas e tamanhos daquela referência, não só da 261 — o filtro é feito no Worker (<code>worker/index.js:280</code>). O tempo de resposta escala com o tamanho desse pacote completo, por isso varia tanto.</dd>
+        <dt>Como a arquitetura se protege</dt><dd>
+          <ul class="plain">
+            <li>Toda chamada à Mersan roda em segundo plano (<code>ctx.waitUntil</code>) — nunca no caminho de uma resposta que o cliente está esperando.</li>
+            <li><b>Nova rede de segurança:</b> se uma revalidação falhar (algo que a amostra sugere acontecer em ~1 a cada 5 tentativas no endpoint de estoque), o Worker mantém servindo a última leitura válida conhecida (guardada no KV, item 04) em vez de propagar o erro — hoje o código não tem esse fallback: se o cache expira e a Mersan falha, o cliente recebe um erro 502 puro e simples.</li>
+          </ul>
+        </dd>
+      </dl>
+    </div>
+  </section>
+
+  <!-- 08 produto -->
+  <section id="produto">
+    <div class="layer-card">
+      <div class="layer-card-head">
+        <h3>08 · Página do produto (<code>src/pages/Produto.jsx</code>)</h3>
+        <span class="pill change">muda</span>
+      </div>
+      <dl class="kv">
+        <dt>O que fica</dt><dd>A troca de cor continua chamando o mesmo fluxo de busca de dados+estoque (<code>selecionarCor</code>), o layout, o carregamento de tamanhos, a lógica de vendedor — nada disso muda.</dd>
+        <dt>O que muda</dt><dd>Deixa de chamar <code>getCached</code>/<code>setCached</code> do <code>ApiService</code>. Toda a decisão de frescor passa a acontecer no Worker — a página só pede e recebe, sem saber se por trás houve um cache hit, uma revalidação em segundo plano ou uma leitura de segurança do KV.</dd>
+        <dt>Resultado prático</dt><dd>Numa reabertura do mesmo produto/cor, em vez de arriscar até 30 minutos de dado velho (comportamento de hoje), o pior caso converge para o mesmo teto de ~5 min de qualquer outra tela — e o caso típico (produto sendo ativamente olhado) fica sob 90 segundos, chegando a ~20s para itens já sinalizados como estoque baixo.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <!-- 09 vitrine -->
+  <section id="vitrine">
+    <div class="layer-card">
+      <div class="layer-card-head">
+        <h3>09 · Vitrine (<code>src/pages/Catalogo.jsx</code>)</h3>
+        <span class="pill change">muda</span>
+      </div>
+      <dl class="kv">
+        <dt>O que fica</dt><dd>O modelo de decisão continua sendo "número agregado pré-calculado no KV", não uma consulta ao vivo por card — isso é intencional: a vitrine é uma visão panorâmica, não precisa (nem deveria, dado o custo/latência da Mersan) de precisão ao segundo.</dd>
+        <dt>O que muda</dt><dd>O ciclo completo de correção cai de ~95 minutos para algo perto de 45 minutos (lote maior, mesma frequência de cron) <em>e</em> ganha correções pontuais imediatas: qualquer produto que alguém abra na página do produto ou no carrinho tem sua entrada no lote corrigida na hora, via a mesma revalidação em segundo plano — a vitrine "aprende" com o tráfego real, em vez de depender só do rodízio cego.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <!-- 10 carrinho -->
+  <section id="carrinho">
+    <div class="layer-card">
+      <div class="layer-card-head">
+        <h3>10 · Carrinho (<code>src/pages/Carrinho.jsx</code>)</h3>
+        <span class="pill stay">permanece</span>
+      </div>
+      <dl class="kv">
+        <dt>O que fica</dt><dd>O código do carrinho não muda — ele já chama <code>/api/estoque</code> direto, sem passar pelo <code>localStorage</code>, que é exatamente o padrão que as outras telas estão adotando agora.</dd>
+        <dt>O que muda</dt><dd>Nada no front. Como a inteligência de frescor mora no Worker (item 03), o carrinho passa a se beneficiar automaticamente dos dois limiares e da rede de segurança contra falha — sem precisar de nenhuma alteração no seu próprio código.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <!-- 11 admin -->
+  <section id="admin">
+    <div class="layer-card">
+      <div class="layer-card-head">
+        <h3>11 · Painel administrativo</h3>
+        <span class="pill new">novo</span>
+      </div>
+      <dl class="kv">
+        <dt>Papel</dt><dd>Como a Mersan não avisa quando uma venda acontece na loja física, esse é o substituto humano para esse aviso.</dd>
+        <dt>Proposta</dt><dd>Um botão por produto — "atualizar agora" — que força a revalidação imediata daquele item específico, para o vendedor acionar logo depois de uma venda no balcão. É a mesma ideia de <code>handleCatalogoForcar</code> (que já existe hoje para o próximo lote inteiro), só que na granularidade de um produto.</dd>
+        <dt>Natureza</dt><dd>Opcional — o sistema funciona sem isso, graças à revalidação automática por acesso. É um reforço de precisão para quem quer garantia manual logo após uma venda.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <hr class="divider" />
+
+  <!-- 12 numeros -->
+  <section id="numeros">
+    <p class="section-index">12 — Resultado esperado</p>
+    <h2>Janela de desatualização, pior caso</h2>
+    <p>Comparação entre o comportamento medido/confirmado hoje e o que a arquitetura proposta entrega, por tela.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Tela / cenário</th><th>Hoje</th><th>Proposto</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Vitrine — produto some/reaparece</td><td class="num">~95 min</td><td class="num better">~45 min (+ correção pontual quase imediata)</td></tr>
+          <tr><td>Produto — acesso "frio" (1ª vez)</td><td class="num">~5 min</td><td class="num better">~5 min (sem mudança — já era o piso técnico)</td></tr>
+          <tr><td>Produto — reacesso no mesmo navegador</td><td class="num">até 30 min</td><td class="num better">&lt; 90s</td></tr>
+          <tr><td>Produto — estoque baixo, sob acesso ativo</td><td class="num">até 30 min</td><td class="num better">~15-20s</td></tr>
+          <tr><td>Carrinho</td><td class="num">~5 min</td><td class="num better">~5 min, com fallback contra erro da Mersan</td></tr>
+          <tr><td>Cliente vê erro por falha da Mersan</td><td class="num">sim, hoje acontece (502)</td><td class="num better">não — serve última leitura válida</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <blockquote class="finding">A maior queda de desatualização não vem de "consultar mais rápido" — vem de <b>remover o cache cego de 30 minutos do navegador</b> e substituí-lo por decisão centralizada no Worker. É a mudança de maior impacto e menor risco de toda a proposta.</blockquote>
+  </section>
+
+  <!-- 13 igual -->
+  <section id="igual">
+    <p class="section-index">13 — Garantias</p>
+    <h2>O que não muda em nada</h2>
+    <p>Tudo abaixo é independente desta proposta — nenhum destes pontos é tocado pela arquitetura de cache.</p>
+    <ul class="check">
+      <li>Fluxo de pedido por WhatsApp (<code>ir-vendedor</code>, <code>ir-vendedor-carrinho</code>), incluindo cores e ordem embaralhada dos vendedores.</li>
+      <li>Seleção de tamanho, favoritos e agrupamento por referência/cor no carrinho e na vitrine.</li>
+      <li>Login e upload de fotos no painel administrativo.</li>
+      <li>Destaque visual de preço promocional na vitrine e na página do produto.</li>
+      <li>Service worker / PWA — já não cacheia respostas de <code>/api/*</code> hoje (<code>NetworkOnly</code>), então nada muda aqui.</li>
+    </ul>
+  </section>
+
+  <!-- 14 riscos -->
+  <section id="riscos">
+    <p class="section-index">14 — Honestidade técnica</p>
+    <h2>Riscos e limites que continuam existindo</h2>
+    <ul class="plain">
+      <li><b>Ainda é "quase" tempo real, não tempo real de verdade.</b> Sem um webhook da Mersan avisando vendas, a arquitetura depende de gatilhos indiretos (acesso do cliente, botão manual, prioridade por estoque baixo) — não de um evento exato no instante da venda.</li>
+      <li><b>A Cache API é por data center.</b> A correção realmente global depende do KV, que tem replicação com consistência eventual (segundos), não instantânea.</li>
+      <li><b>Os números de lote/limiar dependem do plano da Cloudflare contratado.</b> Os valores sugeridos aqui assumem o cenário mais conservador (plano gratuito); no plano pago há folga para ir além.</li>
+      <li><b>A instabilidade da Mersan continua sendo da Mersan.</b> Esta arquitetura isola o cliente dela — não a conserta. Uma indisponibilidade prolongada da Mersan ainda significa que nenhum dado novo entra no sistema, só que o cliente continua vendo o último dado válido em vez de um erro.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Documento de arquitetura — nenhuma alteração de código foi feita. Baseado nas análises de cache, viabilidade de tempo real, performance medida da API da Mersan e no mecanismo de atualização direcionada discutidos nesta conversa.
+  </footer>
+
+</div>

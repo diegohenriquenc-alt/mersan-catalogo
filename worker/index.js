@@ -65,7 +65,7 @@ export default {
     }
 
     if (url.pathname === '/api/admin/foto' && request.method === 'POST') {
-      return handleAdminUploadFoto(request, env)
+      return handleAdminUploadFoto(request, env, ctx)
     }
 
     if (url.pathname === '/api/admin/foto/renomear' && request.method === 'POST') {
@@ -589,7 +589,120 @@ async function handleAdminLogin(request, env) {
   return jsonResponse({ ok: true })
 }
 
-async function handleAdminUploadFoto(request, env) {
+// Prazo máximo que o enriquecimento em segundo plano espera por cada
+// chamada à Mersan antes de desistir e registrar o timeout. Generosos o
+// bastante pra não estourar em condições normais (medido ao vivo: produto
+// tem média de 1,8s/pico 4,1s; estoque tem média de 11s/pico 26,5s e ~20%
+// de falha) — só existem pra não deixar a tarefa em segundo plano pendurada
+// indefinidamente se a Mersan estiver realmente fora do ar.
+const TIMEOUT_PRODUTO_NOVO_MS = 8000
+const TIMEOUT_ESTOQUE_NOVO_MS = 20000
+const LOG_TIMEOUTS_MERSAN_CHAVE = '_catalogo_log_timeouts_mersan'
+
+async function lerCategoriaAtual(env, chave) {
+  try {
+    const atual = await env.FOTOS.getWithMetadata(chave, 'arrayBuffer')
+    return atual?.metadata?.categoria || ''
+  } catch {
+    return ''
+  }
+}
+
+// Grava a ocorrência do timeout no console (visível em "wrangler tail"/nos
+// logs da Cloudflare) e também um contador simples no KV, pra dar pra
+// acompanhar a frequência ao longo do tempo sem precisar estar com o log
+// aberto no momento exato em que acontece. Prefixo "_catalogo_" de propósito
+// — é o mesmo prefixo que já é ignorado em todo lugar que lista fotos de
+// produto (listarTodasFotos + filtros), então esta chave nunca aparece
+// como se fosse um produto cadastrado.
+async function registrarTimeoutMersan(env, tipo, codigo) {
+  console.error(`[cadastro-foto] timeout consultando a Mersan (${tipo}) — código ${codigo}`)
+  try {
+    const bruto = await env.FOTOS.get(LOG_TIMEOUTS_MERSAN_CHAVE)
+    const contagem = bruto ? JSON.parse(bruto) : {}
+    contagem[tipo] = (contagem[tipo] || 0) + 1
+    contagem.ultimoCodigo = codigo
+    contagem.ultimoTipo = tipo
+    contagem.ultimoEm = new Date().toISOString()
+    await env.FOTOS.put(LOG_TIMEOUTS_MERSAN_CHAVE, JSON.stringify(contagem))
+  } catch {
+    // O log é best-effort — nunca deixa o enriquecimento quebrar por causa dele.
+  }
+}
+
+// Roda em segundo plano, DEPOIS que a foto já foi salva e o cliente já
+// recebeu a resposta de sucesso. Busca nome/preço/categoria/estoque na
+// Mersan com prazo (ver TIMEOUT_*_NOVO_MS acima); se estourar, registra e
+// desiste — o produto fica sem esses dados até o próximo ciclo do
+// aquecimento automático, que roda de qualquer forma a cada 5 minutos e
+// tenta de novo.
+async function enriquecerFotoNovaEmSegundoPlano(env, chave) {
+  let dadosProduto = null
+  let categoria = ''
+
+  const controladorProduto = new AbortController()
+  const tempoLimiteProduto = setTimeout(() => controladorProduto.abort(), TIMEOUT_PRODUTO_NOVO_MS)
+  try {
+    dadosProduto = await buscarDadosProdutoMersan(chave, controladorProduto.signal)
+    const indice = indexarCategoriasPorCodigo(await getCategoriasPlanilha(env))
+    const daPlanilha = indice[normalizarCodigoInterno(dadosProduto.codigoSku)]
+    if (daPlanilha) categoria = daPlanilha
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      await registrarTimeoutMersan(env, 'produto', chave)
+    }
+    return
+  } finally {
+    clearTimeout(tempoLimiteProduto)
+  }
+
+  try {
+    const fotoAtual = await env.FOTOS.getWithMetadata(chave, 'arrayBuffer')
+    if (fotoAtual && fotoAtual.value) {
+      await env.FOTOS.put(chave, fotoAtual.value, {
+        metadata: {
+          contentType: fotoAtual.metadata?.contentType || 'image/jpeg',
+          tamanho: fotoAtual.metadata?.tamanho || fotoAtual.value.byteLength,
+          categoria
+        }
+      })
+    }
+  } catch {
+    // Se falhar aqui, o próximo ciclo do aquecimento tenta de novo.
+  }
+
+  if (!dadosProduto.referencia || dadosProduto.referencia.includes('não encontrado')) return
+
+  const controladorEstoque = new AbortController()
+  const tempoLimiteEstoque = setTimeout(() => controladorEstoque.abort(), TIMEOUT_ESTOQUE_NOVO_MS)
+  try {
+    const estoque = await buscarEstoqueMersan(dadosProduto.referencia, dadosProduto.cor, controladorEstoque.signal)
+    const estoqueTotal = estoque.reduce((soma, i) => soma + (i.pares || 0), 0)
+    if (estoqueTotal > 0) {
+      await upsertCatalogoNovo(env, {
+        codigo: chave,
+        categoria,
+        codigoSku: dadosProduto.codigoSku,
+        promocao: dadosProduto.emPromocao,
+        nome: dadosProduto.nome,
+        tamanho: dadosProduto.tamanho,
+        preco: dadosProduto.preco,
+        precoOriginal: dadosProduto.precoOriginal,
+        referencia: dadosProduto.referencia,
+        cor: dadosProduto.cor,
+        estoqueTotal
+      })
+    }
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      await registrarTimeoutMersan(env, 'estoque', chave)
+    }
+  } finally {
+    clearTimeout(tempoLimiteEstoque)
+  }
+}
+
+async function handleAdminUploadFoto(request, env, ctx) {
   if (!autenticado(request, env)) {
     return jsonResponse({ error: 'Senha incorreta.' }, 401)
   }
@@ -610,60 +723,29 @@ async function handleAdminUploadFoto(request, env) {
     return jsonResponse({ error: 'Arquivo grande demais (máximo 24MB).' }, 400)
   }
 
-  // Categoria vem exclusivamente da planilha: a planilha usa o SKU interno
-  // da Mersan como código, não o código de barras usado aqui pra guardar a
-  // foto — então consultamos a Mersan pra saber o SKU deste produto antes
-  // de cruzar com a planilha. Aproveitamos essa mesma consulta pra já
-  // deixar o produto pronto no catálogo na hora, sem esperar o aquecimento
-  // (que processa só um lote de produtos a cada 5 minutos, em ciclo — sem
-  // isso, um produto novo podia demorar vários ciclos até ser varrido e
-  // aparecer na vitrine).
-  let categoria = ''
-  let dadosProduto = null
-  try {
-    dadosProduto = await buscarDadosProdutoMersan(chave)
-    const indice = indexarCategoriasPorCodigo(await getCategoriasPlanilha(env))
-    const daPlanilha = indice[normalizarCodigoInterno(dadosProduto.codigoSku)]
-    if (daPlanilha) categoria = daPlanilha
-  } catch {
-    // Sem dados da Mersan agora: a foto é salva sem categoria. O produto
-    // só não entra "na hora" no catálogo — o próximo ciclo de aquecimento
-    // (ou "Recalcular categorias") aplica a categoria da planilha assim
-    // que os dados da Mersan (e o SKU) ficarem disponíveis.
-  }
+  // Salva a foto IMEDIATAMENTE, sem esperar a Mersan responder — a consulta
+  // de nome/preço/estoque pode demorar até ~26s e falhar em ~1 a cada 5
+  // tentativas (medido ao vivo contra a API da Mersan), e não pode segurar
+  // o "Salvar". Isso acontece depois, em segundo plano
+  // (enriquecerFotoNovaEmSegundoPlano): categoria e estoque chegam assim
+  // que a Mersan responder, ou no próximo ciclo do aquecimento automático
+  // (a cada 5 min) se ela não responder a tempo — o mesmo caminho que
+  // qualquer produto novo já segue hoje.
+  //
+  // Se este código já tinha foto cadastrada (edição de foto existente),
+  // mantém a categoria que já estava salva em vez de zerar — evita que uma
+  // simples troca de imagem "perca" a categoria por alguns instantes.
+  const categoriaAnterior = await lerCategoriaAtual(env, chave)
 
   await env.FOTOS.put(chave, bytes, {
     metadata: {
       contentType: arquivo.type || 'image/jpeg',
       tamanho: bytes.byteLength,
-      categoria
+      categoria: categoriaAnterior
     }
   })
 
-  if (dadosProduto && dadosProduto.referencia && !dadosProduto.referencia.includes('não encontrado')) {
-    try {
-      const estoque = await buscarEstoqueMersan(dadosProduto.referencia, dadosProduto.cor)
-      const estoqueTotal = estoque.reduce((soma, i) => soma + (i.pares || 0), 0)
-      if (estoqueTotal > 0) {
-        await upsertCatalogoNovo(env, {
-          codigo: chave,
-          categoria,
-          codigoSku: dadosProduto.codigoSku,
-          promocao: dadosProduto.emPromocao,
-          nome: dadosProduto.nome,
-          tamanho: dadosProduto.tamanho,
-          preco: dadosProduto.preco,
-          precoOriginal: dadosProduto.precoOriginal,
-          referencia: dadosProduto.referencia,
-          cor: dadosProduto.cor,
-          estoqueTotal
-        })
-      }
-    } catch {
-      // Sem estoque agora: a foto já foi salva de qualquer forma, e o
-      // produto entra no catálogo no próximo ciclo de aquecimento normal.
-    }
-  }
+  ctx.waitUntil(enriquecerFotoNovaEmSegundoPlano(env, chave))
 
   return jsonResponse({ ok: true, codigo: chave })
 }
