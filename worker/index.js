@@ -1321,7 +1321,7 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
 
 const CATALOGO_CACHE_CHAVE = '_catalogo_pronto'
 const CATALOGO_CURSOR_CHAVE = '_catalogo_cursor'
-const CATALOGO_LOTE_TAMANHO = 20
+const CATALOGO_LOTE_TAMANHO = 10
 const CATALOGO_LOTE_PREFIXO = '_catalogo_lote_'
 const CATALOGO_NOVOS_CHAVE = '_catalogo_novos'
 
