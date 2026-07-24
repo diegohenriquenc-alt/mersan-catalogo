@@ -884,15 +884,47 @@ async function handleFotosPublicas(env) {
 const VENDEDORES_CHAVE = '_vendedores'
 const SELECOES_PREFIXO = '_selecao_'
 
+// Toda chave do KV que NÃO é a foto de um produto de verdade. Usada pelo
+// pré-aquecimento (preAquecerCatalogoLote) e pelo debug (handleCatalogoDebug)
+// pra saber quais chaves ignorar. Antes, os dois só excluíam VENDEDORES_CHAVE
+// e o prefixo "_catalogo" — as chaves "_selecao_..." (um link novo a cada
+// clique em "Falar com o vendedor") e "_categorias_planilha" entravam junto
+// como se fossem produtos, e cada uma delas gastava uma vaga inteira num
+// lote tentando "atualizar" um código que nunca vai existir na Mersan.
+// Confirmado ao vivo: 119 das 278 chaves do KV eram "_selecao_..." — quase
+// metade do catálogo pré-aquecido era lixo, o que multiplicava o tempo pra
+// um produto de verdade ser atualizado de novo (e, consequentemente, o
+// tempo de espera do cliente quando o cache já tinha expirado).
+function ehChaveDeProduto(nome) {
+  return (
+    nome !== VENDEDORES_CHAVE &&
+    nome !== CATEGORIAS_PLANILHA_CHAVE &&
+    !nome.startsWith('_catalogo') &&
+    !nome.startsWith(SELECOES_PREFIXO)
+  )
+}
+
 function gerarIdSelecao() {
   return crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
 }
+
+// Sem expirationTtl, cada clique em "Falar com o vendedor" criava uma
+// chave nova que nunca mais saía do KV. Com o tempo, essas chaves passaram
+// a ser a maioria (confirmado ao vivo: 119 de 278 chaves eram "_selecao_"),
+// e o pré-aquecimento do catálogo (preAquecerCatalogoLote) as contava junto
+// com produtos de verdade — cada uma delas some, um lote inteiro era gasto
+// tentando "atualizar" um link que nunca existiu na Mersan, atrasando a
+// atualização real dos produtos e fazendo o cliente esperar bem mais na
+// tela do produto. 30 dias é tempo de sobra pra qualquer link de WhatsApp
+// já compartilhado ter sido aberto.
+const SELECAO_TTL_SEGUNDOS = 30 * 24 * 60 * 60 // 30 dias
 
 async function salvarSelecao(env, itens) {
   const id = gerarIdSelecao()
   await env.FOTOS.put(
     `${SELECOES_PREFIXO}${id}`,
-    JSON.stringify({ itens, criadoEm: new Date().toISOString() })
+    JSON.stringify({ itens, criadoEm: new Date().toISOString() }),
+    { expirationTtl: SELECAO_TTL_SEGUNDOS }
   )
   return id
 }
@@ -1441,7 +1473,7 @@ async function upsertCatalogoNovo(env, item) {
 async function preAquecerCatalogoLote(env) {
   const chavesFotos = await listarTodasFotos(env)
   const codigos = chavesFotos
-    .filter((k) => k.name !== VENDEDORES_CHAVE && !k.name.startsWith('_catalogo'))
+    .filter((k) => ehChaveDeProduto(k.name))
     .map((k) => ({ codigo: k.name, categoria: k.metadata?.categoria || '' }))
 
   if (codigos.length === 0) {
@@ -1461,7 +1493,14 @@ async function preAquecerCatalogoLote(env) {
   const lote = codigos.slice(inicio, inicio + CATALOGO_LOTE_TAMANHO)
 
   const cache = caches.default
-  const origem = 'https://mersan-catalogo.diegohenriquenc.workers.dev'
+  // Precisa ser o MESMO domínio que os clientes reais usam pra bater no
+  // Worker — o Cache API da Cloudflare guarda a entrada pela URL completa
+  // (inclui o host). Esse valor já esteve apontando pra um domínio que não
+  // existe (diegohenriquenc.workers.dev, não resolve em DNS público),
+  // então esse pré-aquecimento gravava cache num endereço que nenhum
+  // cliente de verdade jamais consulta — o trabalho era feito, mas o
+  // resultado nunca era reaproveitado por ninguém.
+  const origem = 'https://mersan-catalogo.mersancalcados.workers.dev'
 
   const indiceCategorias = indexarCategoriasPorCodigo(await getCategoriasPlanilha(env))
 
@@ -1626,7 +1665,7 @@ async function handleCatalogoDebug(env) {
 
   const chavesFotos = await listarTodasFotos(env)
   const codigos = chavesFotos
-    .filter((k) => k.name !== VENDEDORES_CHAVE && !k.name.startsWith('_catalogo'))
+    .filter((k) => ehChaveDeProduto(k.name))
     .map((k) => k.name)
 
   const totalLotes = Math.ceil(codigos.length / CATALOGO_LOTE_TAMANHO)
