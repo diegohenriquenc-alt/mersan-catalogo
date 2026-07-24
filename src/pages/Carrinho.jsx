@@ -5,6 +5,7 @@ import { limparNomeProduto } from '../utils/nomeProduto.js'
 import { corVendedor, ordenarVendedoresPorHora } from '../utils/vendedores.js'
 import ModalConfirmarEnvioUnico from '../components/ModalConfirmarEnvioUnico.jsx'
 import AvisoFlutuante from '../components/AvisoFlutuante.jsx'
+import ConfirmacaoPedidoEnviado from '../components/ConfirmacaoPedidoEnviado.jsx'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
@@ -29,6 +30,7 @@ export default function Carrinho() {
   const [parcelasEscolhidas, setParcelasEscolhidas] = useState('')
   const [modalEnvioUnicoAberto, setModalEnvioUnicoAberto] = useState(false)
   const [avisoPendencia, setAvisoPendencia] = useState(null)
+  const [pedidoEnviadoAberto, setPedidoEnviadoAberto] = useState(false)
 
   useEffect(() => {
     function atualizar() {
@@ -95,20 +97,27 @@ export default function Carrinho() {
     : 1
   const opcoesParcelas = Array.from({ length: maxParcelas }, (_, i) => i + 1)
 
-  function handleFinalizar() {
-    const itensParaEnviar = itens.map((i) => ({ codigo: i.codigo, tamanho: i.tamanho }))
-    const params = new URLSearchParams({
-      vendedor: vendedorEscolhido,
-      itens: JSON.stringify(itensParaEnviar),
-      parcelas: String(parcelasEscolhidas)
-    })
-    window.location.href = `/ir-vendedor-carrinho?${params.toString()}`
-  }
+  const todosComTamanho = itens.length > 0 && itens.every((i) => i.tamanho)
+  const podeFinalizar = todosComTamanho && Boolean(vendedorEscolhido) && Boolean(parcelasEscolhidas)
+  const nomeVendedorEscolhido = vendedores.find((v) => v.id === vendedorEscolhido)?.nome
+
+  // Link de verdade (<a target="_blank">), não um window.open() disparado
+  // por script — abrir nova aba por um clique real de link é sempre
+  // confiável no navegador, sem depender de heurística de pop-up nenhuma.
+  // Só fica pronto quando dá pra finalizar; nos outros casos o clique é
+  // interceptado (preventDefault) pra mostrar aviso ou a confirmação.
+  const linkFinalizar = podeFinalizar
+    ? `/ir-vendedor-carrinho?${new URLSearchParams({
+        vendedor: vendedorEscolhido,
+        itens: JSON.stringify(itens.map((i) => ({ codigo: i.codigo, tamanho: i.tamanho }))),
+        parcelas: String(parcelasEscolhidas)
+      }).toString()}`
+    : null
 
   // Antes o botão só ficava desabilitado, sem dizer por quê. Agora ele
   // sempre reage ao clique: se faltar algo, mostra exatamente o que
   // falta (inclusive quantos itens estão sem tamanho).
-  function handleFinalizarClick() {
+  function handleFinalizarClick(e) {
     const faltando = []
     const semTamanho = itens.filter((i) => !i.tamanho).length
     if (semTamanho === 1) faltando.push('o tamanho de 1 produto')
@@ -117,6 +126,7 @@ export default function Carrinho() {
     if (!parcelasEscolhidas) faltando.push('o parcelamento')
 
     if (faltando.length > 0) {
+      e.preventDefault()
       setAvisoPendencia(`Escolha ${juntarComE(faltando)} para continuar.`)
       return
     }
@@ -125,17 +135,18 @@ export default function Carrinho() {
 
     // Com só 1 item no carrinho, o envio é, na prática, igual ao de mandar
     // um produto avulso — vale a mesma confirmação pra reforçar que dá pra
-    // continuar comprando antes de fechar. Com 2+ itens, envia direto,
-    // exatamente como já funcionava.
+    // continuar comprando antes de fechar. Segura a navegação (o modal tem
+    // seu próprio link) e mostra a confirmação de item único primeiro.
     if (itens.length === 1) {
+      e.preventDefault()
       setModalEnvioUnicoAberto(true)
-    } else {
-      handleFinalizar()
+      return
     }
-  }
 
-  const todosComTamanho = itens.length > 0 && itens.every((i) => i.tamanho)
-  const podeFinalizar = todosComTamanho && Boolean(vendedorEscolhido) && Boolean(parcelasEscolhidas)
+    // 2+ itens, tudo certo: deixa o link seguir normalmente (abre o
+    // WhatsApp numa aba separada) e já mostra a confirmação aqui.
+    setPedidoEnviadoAberto(true)
+  }
 
   return (
     <div style={styles.pagina}>
@@ -249,12 +260,15 @@ export default function Carrinho() {
         )}
 
         {itens.length > 0 && (
-          <button
+          <a
+            href={linkFinalizar || '#'}
+            target={linkFinalizar ? '_blank' : undefined}
+            rel="noopener"
             onClick={handleFinalizarClick}
             style={{ ...styles.botaoFinalizar, opacity: podeFinalizar ? 1 : 0.6 }}
           >
             Finalizar pedido
-          </button>
+          </a>
         )}
       </main>
 
@@ -262,14 +276,21 @@ export default function Carrinho() {
 
       <ModalConfirmarEnvioUnico
         aberto={modalEnvioUnicoAberto}
+        linkEnvio={linkFinalizar}
         onContinuarComprando={() => {
           setModalEnvioUnicoAberto(false)
           navigate('/')
         }}
         onEnviarMesmoAssim={() => {
           setModalEnvioUnicoAberto(false)
-          handleFinalizar()
+          setPedidoEnviadoAberto(true)
         }}
+      />
+
+      <ConfirmacaoPedidoEnviado
+        aberto={pedidoEnviadoAberto}
+        nomeVendedor={nomeVendedorEscolhido}
+        onFechar={() => setPedidoEnviadoAberto(false)}
       />
     </div>
   )
@@ -333,8 +354,10 @@ const styles = {
     fontWeight: 700, fontSize: '14px', padding: '13px 24px', borderRadius: '999px'
   },
   botaoFinalizar: {
+    display: 'block', boxSizing: 'border-box',
     position: 'fixed', bottom: '16px', left: '16px', right: '16px',
     background: '#e4002b', color: '#fff', border: 'none', borderRadius: '14px',
-    padding: '17px', fontSize: '16px', fontWeight: 800, cursor: 'pointer'
+    padding: '17px', fontSize: '16px', fontWeight: 800, cursor: 'pointer',
+    textAlign: 'center', textDecoration: 'none'
   }
 }

@@ -7,6 +7,7 @@ import { adicionarAoCarrinho, estaNoCarrinho } from '../utils/carrinho.js'
 import { voarParaCarrinho, dispararToastCarrinho } from '../utils/carrinhoUI.js'
 import ModalConfirmarEnvioUnico from '../components/ModalConfirmarEnvioUnico.jsx'
 import AvisoFlutuante from '../components/AvisoFlutuante.jsx'
+import ConfirmacaoPedidoEnviado from '../components/ConfirmacaoPedidoEnviado.jsx'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
@@ -87,6 +88,7 @@ export default function Produto() {
   const [noCarrinho, setNoCarrinho] = useState(false)
   const [modalEnvioUnicoAberto, setModalEnvioUnicoAberto] = useState(false)
   const [avisoPendencia, setAvisoPendencia] = useState(null)
+  const [pedidoEnviadoAberto, setPedidoEnviadoAberto] = useState(false)
 
   // Reflete se ESTE código específico (a cor/variante sendo exibida agora)
   // já está no carrinho — troca de cor deve atualizar esse estado também.
@@ -279,6 +281,7 @@ export default function Produto() {
         parcelas: String(parcelasEscolhidas)
       }).toString()
     : ''
+  const nomeVendedorEscolhido = vendedores.find((v) => v.id === vendedorEscolhido)?.nome
 
   const marca = produto ? extrairMarca(produto.nome) : null
   const nomeExibido = produto ? limparNomeProduto(produto.nome) : ''
@@ -521,10 +524,21 @@ export default function Produto() {
 
           <ModalConfirmarEnvioUnico
             aberto={modalEnvioUnicoAberto}
+            linkEnvio={`/ir-vendedor?${paramsPedido}`}
             onContinuarComprando={() => setModalEnvioUnicoAberto(false)}
             onEnviarMesmoAssim={() => {
-              window.location.href = `/ir-vendedor?${paramsPedido}`
+              // O link <a target="_blank"> já cuida de abrir o WhatsApp
+              // numa aba separada — aqui só fecha o modal e mostra a
+              // confirmação, sem interferir na navegação do próprio link.
+              setModalEnvioUnicoAberto(false)
+              setPedidoEnviadoAberto(true)
             }}
+          />
+
+          <ConfirmacaoPedidoEnviado
+            aberto={pedidoEnviadoAberto}
+            nomeVendedor={nomeVendedorEscolhido}
+            onFechar={() => setPedidoEnviadoAberto(false)}
           />
         </div>
       )}

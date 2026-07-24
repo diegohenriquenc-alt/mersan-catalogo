@@ -1,8 +1,10 @@
 // Modal usado sempre que o cliente está prestes a mandar para o WhatsApp
 // SÓ o produto atual, sem passar pelo carrinho (ou com o carrinho tendo
-// só 1 item). Não altera em nada o fluxo de envio em si — "Enviar somente
-// este produto" dispara exatamente a mesma navegação que já existia antes.
-export default function ModalConfirmarEnvioUnico({ aberto, onContinuarComprando, onEnviarMesmoAssim }) {
+// só 1 item). "Enviar somente este produto" é um link <a target="_blank">
+// de verdade (não um window.open() disparado por script) — abrir nova aba
+// por um clique real de link é sempre confiável no navegador, sem
+// depender de heurística nenhuma de bloqueio de pop-up.
+export default function ModalConfirmarEnvioUnico({ aberto, linkEnvio, onContinuarComprando, onEnviarMesmoAssim }) {
   if (!aberto) return null
 
   return (
@@ -18,9 +20,15 @@ export default function ModalConfirmarEnvioUnico({ aberto, onContinuarComprando,
           <button style={styles.botaoPrimario} onClick={onContinuarComprando}>
             Continuar comprando
           </button>
-          <button style={styles.botaoSecundario} onClick={onEnviarMesmoAssim}>
+          <a
+            href={linkEnvio}
+            target="_blank"
+            rel="noopener"
+            onClick={onEnviarMesmoAssim}
+            style={styles.botaoSecundario}
+          >
             Enviar somente este produto
-          </button>
+          </a>
         </div>
       </div>
     </div>
@@ -70,6 +78,7 @@ const styles = {
     cursor: 'pointer'
   },
   botaoSecundario: {
+    display: 'block',
     width: '100%',
     padding: '16px',
     fontSize: '15.5px',
@@ -78,6 +87,9 @@ const styles = {
     background: '#f2f2f3',
     border: 'none',
     borderRadius: '14px',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    textAlign: 'center',
+    textDecoration: 'none',
+    boxSizing: 'border-box'
   }
 }
