@@ -330,7 +330,7 @@ export default function Produto() {
 
           {produto.preco != null && (
             <div style={styles.secao}>
-              <h2 style={styles.secaoTitulo}>Escolha o tamanho</h2>
+              <h2 style={styles.secaoTitulo}>Tamanhos disponíveis</h2>
 
               {carregandoEstoque && (
                 <p style={styles.dicaCarregando}>
