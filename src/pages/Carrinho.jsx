@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { listarCarrinho, removerDoCarrinho, definirTamanho } from '../utils/carrinho.js'
 import { limparNomeProduto } from '../utils/nomeProduto.js'
 import { corVendedor, ordenarVendedoresPorHora } from '../utils/vendedores.js'
+import ModalConfirmarEnvioUnico from '../components/ModalConfirmarEnvioUnico.jsx'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
 const MAX_PARCELAS = 10
 
 export default function Carrinho() {
+  const navigate = useNavigate()
   const [itens, setItens] = useState(listarCarrinho())
   const [produtos, setProdutos] = useState({})
   const [estoques, setEstoques] = useState({})
@@ -16,6 +18,7 @@ export default function Carrinho() {
   const [vendedores, setVendedores] = useState([])
   const [vendedorEscolhido, setVendedorEscolhido] = useState(null)
   const [parcelasEscolhidas, setParcelasEscolhidas] = useState('')
+  const [modalEnvioUnicoAberto, setModalEnvioUnicoAberto] = useState(false)
 
   useEffect(() => {
     function atualizar() {
@@ -92,6 +95,18 @@ export default function Carrinho() {
     window.location.href = `/ir-vendedor-carrinho?${params.toString()}`
   }
 
+  // Com só 1 item no carrinho, o envio é, na prática, igual ao de mandar
+  // um produto avulso — vale a mesma confirmação pra reforçar que dá pra
+  // continuar comprando antes de fechar. Com 2+ itens, envia direto,
+  // exatamente como já funcionava.
+  function handleFinalizarClick() {
+    if (itens.length === 1) {
+      setModalEnvioUnicoAberto(true)
+    } else {
+      handleFinalizar()
+    }
+  }
+
   const todosComTamanho = itens.length > 0 && itens.every((i) => i.tamanho)
   const podeFinalizar = todosComTamanho && Boolean(vendedorEscolhido) && Boolean(parcelasEscolhidas)
 
@@ -106,7 +121,11 @@ export default function Carrinho() {
       <main style={styles.conteudo}>
         {loading && <p style={styles.status}>Carregando carrinho…</p>}
         {!loading && itens.length === 0 && (
-          <p style={styles.status}>Seu carrinho está vazio.</p>
+          <div style={styles.vazio}>
+            <span style={styles.vazioIcone}>🛒</span>
+            <p style={styles.vazioTexto}>Seu carrinho está vazio.</p>
+            <Link to="/" style={styles.vazioBotao}>Ver catálogo</Link>
+          </div>
         )}
 
         {itens.length > 0 && (
@@ -146,6 +165,13 @@ export default function Carrinho() {
 
             return (
               <div key={item.codigo} style={styles.itemCard}>
+                <button
+                  onClick={() => handleRemover(item.codigo)}
+                  style={styles.botaoRemover}
+                  aria-label="Remover produto do carrinho"
+                >
+                  ✕
+                </button>
                 <img
                   src={`/produto-foto/${encodeURIComponent(p.codigoBarras || item.codigo)}`}
                   alt={limparNomeProduto(p.nome)}
@@ -154,6 +180,7 @@ export default function Carrinho() {
                 />
                 <div style={styles.info}>
                   <span style={styles.nome}>{limparNomeProduto(p.nome)}</span>
+                  {p.cor && <span style={styles.detalhe}>Cor: {p.cor}</span>}
                   <span style={styles.preco}>R$ {Number(p.preco).toFixed(2).replace('.', ',')}</span>
 
                   <select
@@ -169,7 +196,6 @@ export default function Carrinho() {
 
                   {!item.tamanho && <span style={styles.avisoTamanho}>Escolha o tamanho para continuar</span>}
                 </div>
-                <button onClick={() => handleRemover(item.codigo)} style={styles.botaoRemover}>Remover</button>
               </div>
             )
           })}
@@ -198,13 +224,25 @@ export default function Carrinho() {
         {itens.length > 0 && (
           <button
             disabled={!podeFinalizar}
-            onClick={handleFinalizar}
+            onClick={handleFinalizarClick}
             style={{ ...styles.botaoFinalizar, opacity: podeFinalizar ? 1 : 0.5 }}
           >
             Finalizar pedido
           </button>
         )}
       </main>
+
+      <ModalConfirmarEnvioUnico
+        aberto={modalEnvioUnicoAberto}
+        onContinuarComprando={() => {
+          setModalEnvioUnicoAberto(false)
+          navigate('/')
+        }}
+        onEnviarMesmoAssim={() => {
+          setModalEnvioUnicoAberto(false)
+          handleFinalizar()
+        }}
+      />
     </div>
   )
 }
@@ -235,26 +273,40 @@ const styles = {
   },
   lista: { display: 'flex', flexDirection: 'column', gap: '12px' },
   itemCard: {
-    display: 'flex', gap: '12px', background: '#fff', borderRadius: '13px',
-    padding: '10px', boxShadow: '0 1px 2px rgba(20,20,26,0.06)'
+    position: 'relative',
+    display: 'flex', gap: '14px', background: '#fff', borderRadius: '16px',
+    padding: '14px', boxShadow: '0 1px 2px rgba(20,20,26,0.06), 0 3px 10px rgba(20,20,26,0.04)'
   },
-  foto: { width: '72px', height: '72px', objectFit: 'contain', flexShrink: 0 },
-  info: { flex: 1, display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 },
-  nome: { fontWeight: 700, fontSize: '13px' },
-  preco: { fontWeight: 800, fontSize: '14px' },
+  foto: { width: '84px', height: '84px', objectFit: 'contain', flexShrink: 0 },
+  info: { flex: 1, display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0, paddingRight: '28px' },
+  nome: { fontWeight: 700, fontSize: '14px', lineHeight: 1.3 },
+  detalhe: { fontSize: '12.5px', color: '#6b6b6b', fontWeight: 600 },
+  preco: { fontWeight: 800, fontSize: '15px', marginTop: '2px' },
   selectTamanho: {
-    marginTop: '4px', padding: '6px', borderRadius: '8px',
-    border: '1px solid #ddd', fontSize: '13px'
+    marginTop: '6px', padding: '11px 10px', borderRadius: '10px',
+    border: '1px solid #ddd', fontSize: '14px'
   },
-  avisoTamanho: { fontSize: '11px', color: '#e4002b' },
+  avisoTamanho: { fontSize: '12px', color: '#e4002b', fontWeight: 600 },
   botaoRemover: {
-    background: '#f0f0f0', color: '#333', border: 'none', fontSize: '12px',
-    fontWeight: 700, padding: '6px 10px', borderRadius: '8px', cursor: 'pointer',
-    alignSelf: 'flex-start'
+    position: 'absolute', top: '10px', right: '10px',
+    width: '30px', height: '30px',
+    background: '#f2f2f3', color: '#6b6b6b', border: 'none', borderRadius: '999px',
+    fontSize: '14px', fontWeight: 700, cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center'
+  },
+  vazio: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px',
+    padding: '48px 16px'
+  },
+  vazioIcone: { fontSize: '48px' },
+  vazioTexto: { color: '#666', fontSize: '15px', margin: 0 },
+  vazioBotao: {
+    marginTop: '4px', background: '#14141a', color: '#fff', textDecoration: 'none',
+    fontWeight: 700, fontSize: '14px', padding: '13px 24px', borderRadius: '999px'
   },
   botaoFinalizar: {
     position: 'fixed', bottom: '16px', left: '16px', right: '16px',
-    background: '#e4002b', color: '#fff', border: 'none', borderRadius: '13px',
-    padding: '16px', fontSize: '16px', fontWeight: 800, cursor: 'pointer'
+    background: '#e4002b', color: '#fff', border: 'none', borderRadius: '14px',
+    padding: '17px', fontSize: '16px', fontWeight: 800, cursor: 'pointer'
   }
 }

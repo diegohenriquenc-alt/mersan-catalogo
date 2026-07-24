@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ehFavorito, alternarFavorito, contarFavoritos } from '../utils/favoritos.js'
 import { estaNoCarrinho, adicionarAoCarrinho, contarCarrinho } from '../utils/carrinho.js'
+import { voarParaCarrinho, dispararToastCarrinho } from '../utils/carrinhoUI.js'
 import { limparNomeProduto } from '../utils/nomeProduto.js'
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
@@ -243,9 +244,14 @@ export default function Catalogo() {
 <button
               onClick={(e) => {
                 e.preventDefault()
-                adicionarAoCarrinho(p.codigo)
+                const foiAdicionado = adicionarAoCarrinho(p.codigo)
                 setCarrinhoVersao((v) => v + 1)
+                if (foiAdicionado) {
+                  voarParaCarrinho(e.currentTarget)
+                  dispararToastCarrinho()
+                }
               }}
+              className="mersan-botao-carrinho-icone"
               style={styles.botaoCarrinho}
               aria-label="Adicionar ao carrinho"
             >
@@ -491,16 +497,16 @@ badgeFavoritos: {
   position: 'absolute',
   bottom: '6px',
   right: '6px',
-  background: '#ffffff',
+  background: '#14141a',
   border: 'none',
   borderRadius: '999px',
-  width: '32px',
-  height: '32px',
+  width: '36px',
+  height: '36px',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  fontSize: '16px',
-  boxShadow: '0 1px 3px rgba(20,20,26,0.15)',
+  fontSize: '17px',
+  boxShadow: '0 2px 6px rgba(20,20,26,0.25)',
   cursor: 'pointer',
   padding: 0
 },

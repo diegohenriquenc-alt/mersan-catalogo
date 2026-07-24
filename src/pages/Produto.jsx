@@ -3,6 +3,9 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import ApiService from '../services/api.js'
 import { limparNomeProduto } from '../utils/nomeProduto.js'
 import { corVendedor, ordenarVendedoresPorHora } from '../utils/vendedores.js'
+import { adicionarAoCarrinho, estaNoCarrinho } from '../utils/carrinho.js'
+import { voarParaCarrinho, dispararToastCarrinho } from '../utils/carrinhoUI.js'
+import ModalConfirmarEnvioUnico from '../components/ModalConfirmarEnvioUnico.jsx'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
@@ -71,6 +74,32 @@ export default function Produto() {
 
   const [relacionados, setRelacionados] = useState([])
   const [variantesCor, setVariantesCor] = useState([])
+
+  const [noCarrinho, setNoCarrinho] = useState(false)
+  const [modalEnvioUnicoAberto, setModalEnvioUnicoAberto] = useState(false)
+
+  // Reflete se ESTE código específico (a cor/variante sendo exibida agora)
+  // já está no carrinho — troca de cor deve atualizar esse estado também.
+  useEffect(() => {
+    setNoCarrinho(estaNoCarrinho(codigoAtual))
+  }, [codigoAtual])
+
+  useEffect(() => {
+    function atualizar() {
+      setNoCarrinho(estaNoCarrinho(codigoAtual))
+    }
+    window.addEventListener('carrinho-mudou', atualizar)
+    return () => window.removeEventListener('carrinho-mudou', atualizar)
+  }, [codigoAtual])
+
+  function handleAdicionarAoCarrinho(e) {
+    const foiAdicionado = adicionarAoCarrinho(codigoAtual, tamanhoEscolhido || null)
+    if (foiAdicionado) {
+      voarParaCarrinho(e.currentTarget)
+      dispararToastCarrinho()
+      setNoCarrinho(true)
+    }
+  }
 
   // Chegou aqui por um link de verdade (catálogo, relacionados, etc): o
   // parâmetro de rota muda, então sincroniza o código "atual" com ele.
@@ -445,17 +474,31 @@ export default function Produto() {
           )}
 
           <div style={styles.rodape}>
+            <button
+              onClick={handleAdicionarAoCarrinho}
+              style={noCarrinho ? styles.botaoCarrinhoFeito : styles.botaoCarrinho}
+            >
+              {noCarrinho ? '✅ Adicionado ao carrinho' : '🛒 Adicionar ao carrinho'}
+            </button>
             {linkPedidoPronto ? (
-              <a href={`/ir-vendedor?${paramsPedido}`} style={styles.botaoWhatsApp}>
+              <button onClick={() => setModalEnvioUnicoAberto(true)} style={styles.botaoWhatsApp}>
                 <IconeWhatsApp />
                 FALAR COM O VENDEDOR
-              </a>
+              </button>
             ) : (
               <button disabled style={styles.botaoWhatsAppDesabilitado}>
                 Falar com o vendedor no WhatsApp
               </button>
             )}
           </div>
+
+          <ModalConfirmarEnvioUnico
+            aberto={modalEnvioUnicoAberto}
+            onContinuarComprando={() => setModalEnvioUnicoAberto(false)}
+            onEnviarMesmoAssim={() => {
+              window.location.href = `/ir-vendedor?${paramsPedido}`
+            }}
+          />
         </div>
       )}
 
@@ -488,7 +531,7 @@ const styles = {
   pagina: {
     minHeight: '100dvh',
     background: '#ffffff',
-    paddingBottom: '104px',
+    paddingBottom: '176px',
     fontFamily:
       "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
   },
@@ -765,13 +808,51 @@ const styles = {
     bottom: 0,
     background: '#ffffff',
     boxShadow: '0 -2px 12px rgba(20,20,26,0.08)',
-    padding: '14px 16px',
+    padding: '14px 16px calc(14px + env(safe-area-inset-bottom, 0px))',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
     zIndex: 10
+  },
+  botaoCarrinho: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    gap: '8px',
+    textAlign: 'center',
+    padding: '15px',
+    fontSize: '15px',
+    fontWeight: 800,
+    letterSpacing: '0.01em',
+    color: '#14141a',
+    background: '#f2f2f3',
+    border: 'none',
+    borderRadius: '999px',
+    cursor: 'pointer'
+  },
+  botaoCarrinhoFeito: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    gap: '8px',
+    textAlign: 'center',
+    padding: '15px',
+    fontSize: '15px',
+    fontWeight: 800,
+    letterSpacing: '0.01em',
+    color: '#0a7d3a',
+    background: '#e8f8ee',
+    border: 'none',
+    borderRadius: '999px',
+    cursor: 'pointer'
   },
   botaoWhatsApp: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    width: '100%',
     gap: '10px',
     textAlign: 'center',
     padding: '17px',
@@ -780,7 +861,9 @@ const styles = {
     letterSpacing: '0.01em',
     color: '#ffffff',
     background: '#25D366',
+    border: 'none',
     borderRadius: '999px',
+    cursor: 'pointer',
     textDecoration: 'none'
   },
   botaoWhatsAppDesabilitado: {

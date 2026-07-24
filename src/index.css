@@ -47,3 +47,34 @@ a {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ---------- Carrinho: UX de adicionar/confirmar (Etapa 5) ---------- */
+
+@keyframes mersan-bump-carrinho {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.32); }
+  60% { transform: scale(0.94); }
+  100% { transform: scale(1); }
+}
+
+@keyframes mersan-entrar-topo {
+  from { transform: translateY(-14px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes mersan-entrar-baixo {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes mersan-pop-suave {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.08); }
+}
+
+.mersan-botao-carrinho-icone {
+  transition: transform 0.15s ease;
+}
+.mersan-botao-carrinho-icone:active {
+  transform: scale(0.86);
+}
