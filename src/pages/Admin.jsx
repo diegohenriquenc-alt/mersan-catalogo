@@ -108,6 +108,7 @@ function PainelFotos({ senha }) {
   const [estoquePorCodigo, setEstoquePorCodigo] = useState({})
   const [nomePorCodigo, setNomePorCodigo] = useState({})
   const [termoBusca, setTermoBusca] = useState('')
+  const [categoriaFiltroAdmin, setCategoriaFiltroAdmin] = useState(null)
   const [listaAberta, setListaAberta] = useState(false)
   const [codigoExcluirManual, setCodigoExcluirManual] = useState('')
   const [excluindoManual, setExcluindoManual] = useState(false)
@@ -719,12 +720,35 @@ function PainelFotos({ senha }) {
     )
   }
 
-  const fotosEsgotadasFiltradas = fotosEsgotadas.filter(correspondeABusca)
-  const fotosNormaisFiltradas = fotosNormais.filter(correspondeABusca)
+  // Gaveta por categoria, igual à de Esgotados: cada botão mostra quantos
+  // produtos tem (cadastrados + esgotados juntos, é uma pergunta diferente
+  // de "está em estoque?") e clicar filtra a lista abaixo por ela. "Sem
+  // categoria" entra também, pra achar rápido o que ainda falta categorizar.
+  const SEM_CATEGORIA = 'Sem categoria'
+  const contagemPorCategoria = {}
+  for (const f of fotos) {
+    const cat = f.categoria || SEM_CATEGORIA
+    contagemPorCategoria[cat] = (contagemPorCategoria[cat] || 0) + 1
+  }
+
+  function correspondeACategoria(f) {
+    if (!categoriaFiltroAdmin) return true
+    const cat = f.categoria || SEM_CATEGORIA
+    return cat === categoriaFiltroAdmin
+  }
+
+  function selecionarCategoriaAdmin(cat) {
+    setCategoriaFiltroAdmin((atual) => (atual === cat ? null : cat))
+    limparSelecao()
+  }
+
+  const fotosEsgotadasFiltradas = fotosEsgotadas.filter((f) => correspondeABusca(f) && correspondeACategoria(f))
+  const fotosNormaisFiltradas = fotosNormais.filter((f) => correspondeABusca(f) && correspondeACategoria(f))
   const fotosExibidas = abaAtiva === 'esgotados' ? fotosEsgotadasFiltradas : fotosNormaisFiltradas
-  // Buscando, mostra TODOS os resultados de uma vez (sem o limite de 50),
-  // pra "Selecionar todos os visíveis" selecionar de fato tudo que a busca achou.
-  const fotosParaMostrar = termoBuscaNormalizado ? fotosExibidas : fotosExibidas.slice(0, limiteExibicao)
+  // Buscando ou filtrando por categoria, mostra TODOS os resultados de uma
+  // vez (sem o limite de 50), pra "Selecionar todos os visíveis" selecionar
+  // de fato tudo que foi encontrado.
+  const fotosParaMostrar = (termoBuscaNormalizado || categoriaFiltroAdmin) ? fotosExibidas : fotosExibidas.slice(0, limiteExibicao)
 
   function selecionarTodosVisiveis() {
     setSelecionados(new Set(fotosParaMostrar.map((f) => f.codigo)))
@@ -866,10 +890,30 @@ function PainelFotos({ senha }) {
             </button>
           </div>
 
+          <div style={styles.categoriasGaveta}>
+            {[...CATEGORIAS_PRODUTO, 'Sem categoria'].map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => selecionarCategoriaAdmin(cat)}
+                style={categoriaFiltroAdmin === cat ? styles.categoriaBotaoAtivo : styles.categoriaBotao}
+              >
+                {cat} ({contagemPorCategoria[cat] || 0})
+              </button>
+            ))}
+          </div>
+
           {termoBuscaNormalizado && (
             <p style={styles.vazio}>
               Buscando por "{termoBusca.trim()}" — {fotosExibidas.length} encontrados nesta aba.
               Use "Selecionar todos os visíveis" pra marcar todos de uma vez.
+            </p>
+          )}
+
+          {categoriaFiltroAdmin && (
+            <p style={styles.vazio}>
+              Filtrando pela categoria "{categoriaFiltroAdmin}" — {fotosExibidas.length} encontrados nesta aba.
+              Clique de novo no botão da categoria pra limpar o filtro.
             </p>
           )}
 
@@ -1489,6 +1533,32 @@ const styles = {
     fontWeight: 700,
     color: '#ffffff',
     background: '#14141a',
+    border: 'none',
+    borderRadius: '999px',
+    cursor: 'pointer'
+  },
+  categoriasGaveta: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+    marginBottom: '12px'
+  },
+  categoriaBotao: {
+    padding: '7px 12px',
+    fontSize: '12px',
+    fontWeight: 700,
+    color: '#0057ff',
+    background: '#f2f6ff',
+    border: 'none',
+    borderRadius: '999px',
+    cursor: 'pointer'
+  },
+  categoriaBotaoAtivo: {
+    padding: '7px 12px',
+    fontSize: '12px',
+    fontWeight: 700,
+    color: '#ffffff',
+    background: '#0057ff',
     border: 'none',
     borderRadius: '999px',
     cursor: 'pointer'
