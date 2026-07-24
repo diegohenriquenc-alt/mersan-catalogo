@@ -1232,6 +1232,53 @@ async function handleAdminCategoriaManual(request, env) {
     atualizados++
   }
 
+  // A vitrine (/api/catalogo) não lê a foto ao vivo — ela lê um
+  // "instantâneo" que só o cron atualiza, produto por produto, a cada
+  // ciclo (pode levar quase 1h pra passar de novo por um produto
+  // específico). Sem isso aqui, a categoria escolhida à mão só apareceria
+  // pro cliente depois desse tempo todo. Mesmo padrão de busca usado em
+  // handleAdminExcluirFoto: acha o produto na gaveta de "recém-cadastrados"
+  // e em cada lote, corrige a categoria ali também, na hora.
+  const codigosAtualizadosSet = new Set(codigos)
+
+  const novos = await getCatalogoNovos(env)
+  let novosMudaram = false
+  const novosAtualizados = novos.map((p) => {
+    if (codigosAtualizadosSet.has(p.codigo) && p.categoria !== categoria) {
+      novosMudaram = true
+      return { ...p, categoria }
+    }
+    return p
+  })
+  if (novosMudaram) {
+    await env.FOTOS.put(CATALOGO_NOVOS_CHAVE, JSON.stringify(novosAtualizados))
+  }
+
+  const indiceBruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
+  const totalLotes = indiceBruto ? JSON.parse(indiceBruto).totalLotes || 0 : 0
+  if (totalLotes > 0) {
+    const lotesBrutos = await Promise.all(
+      Array.from({ length: totalLotes }, (_, i) => env.FOTOS.get(`${CATALOGO_LOTE_PREFIXO}${i}`))
+    )
+    await Promise.all(
+      lotesBrutos.map(async (bruto, i) => {
+        if (!bruto) return
+        const lista = JSON.parse(bruto)
+        let mudou = false
+        const listaAtualizada = lista.map((p) => {
+          if (codigosAtualizadosSet.has(p.codigo) && p.categoria !== categoria) {
+            mudou = true
+            return { ...p, categoria }
+          }
+          return p
+        })
+        if (mudou) {
+          await env.FOTOS.put(`${CATALOGO_LOTE_PREFIXO}${i}`, JSON.stringify(listaAtualizada))
+        }
+      })
+    )
+  }
+
   return jsonResponse({ ok: true, atualizados, naoEncontrados })
 }
 
