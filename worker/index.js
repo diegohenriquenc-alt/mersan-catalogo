@@ -10,6 +10,13 @@
 //  /api/admin/foto (POST)        -> envia/troca a foto de um produto
 //  /api/admin/foto (DELETE)      -> exclui a foto de um produto
 //  /api/admin/fotos (GET)        -> lista as fotos já cadastradas
+//  /api/admin/estoque-cadastrados (GET)  -> estoque real de cada produto
+//                                    cadastrado, incluindo os zerados
+//                                    (o /api/catalogo público já filtra
+//                                    os zerados antes de responder)
+//  /api/admin/categoria-manual (POST)    -> aplica uma categoria à mão
+//                                    a uma lista de produtos, protegida
+//                                    contra sobrescrita pela planilha
 //  qualquer outra rota           -> site estático (React) via binding ASSETS
 
 const MERSAN_BASE = 'https://credito.mersan.co/api/v1'
@@ -118,6 +125,14 @@ export default {
 
     if (url.pathname === '/api/admin/recalcular-categorias' && request.method === 'POST') {
       return handleAdminRecalcularCategorias(request, env)
+    }
+
+    if (url.pathname === '/api/admin/categoria-manual' && request.method === 'POST') {
+      return handleAdminCategoriaManual(request, env)
+    }
+
+    if (url.pathname === '/api/admin/estoque-cadastrados' && request.method === 'GET') {
+      return handleAdminEstoqueCadastrados(request, env)
     }
 
     if (url.pathname === '/ir-vendedor' && request.method === 'GET') {
@@ -602,9 +617,12 @@ const LOG_TIMEOUTS_MERSAN_CHAVE = '_catalogo_log_timeouts_mersan'
 async function lerCategoriaAtual(env, chave) {
   try {
     const atual = await env.FOTOS.getWithMetadata(chave, 'arrayBuffer')
-    return atual?.metadata?.categoria || ''
+    return {
+      categoria: atual?.metadata?.categoria || '',
+      categoriaManual: Boolean(atual?.metadata?.categoriaManual)
+    }
   } catch {
-    return ''
+    return { categoria: '', categoriaManual: false }
   }
 }
 
@@ -735,13 +753,14 @@ async function handleAdminUploadFoto(request, env, ctx) {
   // Se este código já tinha foto cadastrada (edição de foto existente),
   // mantém a categoria que já estava salva em vez de zerar — evita que uma
   // simples troca de imagem "perca" a categoria por alguns instantes.
-  const categoriaAnterior = await lerCategoriaAtual(env, chave)
+  const { categoria: categoriaAnterior, categoriaManual: categoriaManualAnterior } = await lerCategoriaAtual(env, chave)
 
   await env.FOTOS.put(chave, bytes, {
     metadata: {
       contentType: arquivo.type || 'image/jpeg',
       tamanho: bytes.byteLength,
-      categoria: categoriaAnterior
+      categoria: categoriaAnterior,
+      categoriaManual: categoriaManualAnterior
     }
   })
 
@@ -857,6 +876,7 @@ async function handleAdminListarFotos(request, env) {
       codigo: k.name,
       tamanho: k.metadata?.tamanho || null,
       categoria: k.metadata?.categoria || '',
+      categoriaManual: Boolean(k.metadata?.categoriaManual),
       modificadoEm: k.metadata?.atualizadoEm || null
     }))
 
@@ -1124,8 +1144,11 @@ async function recalcularCategoriasInterno(env) {
   let atualizados = 0
   let encontrados = 0
   let semSku = 0
+  let protegidosPorCategoriaManual = 0
 
   for (const chaveInfo of fotos) {
+    if (chaveInfo.metadata?.categoriaManual) { protegidosPorCategoriaManual++; continue }
+
     const sku = skuPorCodigo[chaveInfo.name]
     if (!sku) { semSku++; continue }
 
@@ -1158,7 +1181,8 @@ async function recalcularCategoriasInterno(env) {
     totalFotos: fotos.length,
     encontradosNaPlanilha: encontrados,
     atualizados,
-    semDadosDeSku: semSku
+    semDadosDeSku: semSku,
+    protegidosPorCategoriaManual
   }
 }
 
@@ -1169,6 +1193,46 @@ async function handleAdminRecalcularCategorias(request, env) {
 
   const resultado = await recalcularCategoriasInterno(env)
   return jsonResponse({ ok: true, ...resultado })
+}
+
+// Aplica uma categoria escolhida à mão a um lote de produtos selecionados
+// no painel admin. Marca categoriaManual=true, que protege esses produtos
+// de serem sobrescritos depois por uma planilha nova ou por
+// "Recalcular categorias" (ver preAquecerCatalogoLote e
+// recalcularCategoriasInterno) — só volta a mudar se o admin escolher de
+// novo por aqui.
+async function handleAdminCategoriaManual(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const corpo = await request.json().catch(() => null)
+  const codigos = Array.isArray(corpo?.codigos) ? corpo.codigos : null
+  const categoria = typeof corpo?.categoria === 'string' ? corpo.categoria : null
+
+  if (!codigos || codigos.length === 0 || !categoria) {
+    return jsonResponse({ error: 'Envie "codigos" (lista) e "categoria".' }, 400)
+  }
+
+  let atualizados = 0
+  let naoEncontrados = 0
+
+  for (const codigo of codigos) {
+    const resultado = await env.FOTOS.getWithMetadata(codigo, 'arrayBuffer')
+    if (!resultado || !resultado.value) { naoEncontrados++; continue }
+
+    await env.FOTOS.put(codigo, resultado.value, {
+      metadata: {
+        contentType: resultado.metadata?.contentType || 'image/jpeg',
+        tamanho: resultado.metadata?.tamanho || resultado.value.byteLength,
+        categoria,
+        categoriaManual: true
+      }
+    })
+    atualizados++
+  }
+
+  return jsonResponse({ ok: true, atualizados, naoEncontrados })
 }
 
 async function handleAdminExcluirVendedor(request, url, env) {
@@ -1474,7 +1538,11 @@ async function preAquecerCatalogoLote(env) {
   const chavesFotos = await listarTodasFotos(env)
   const codigos = chavesFotos
     .filter((k) => ehChaveDeProduto(k.name))
-    .map((k) => ({ codigo: k.name, categoria: k.metadata?.categoria || '' }))
+    .map((k) => ({
+      codigo: k.name,
+      categoria: k.metadata?.categoria || '',
+      categoriaManual: Boolean(k.metadata?.categoriaManual)
+    }))
 
   if (codigos.length === 0) {
     // Não zera o catálogo aqui: se a listagem vier vazia por uma falha
@@ -1516,7 +1584,9 @@ async function preAquecerCatalogoLote(env) {
         // extra de aquecimento, e produtos ficavam sem categoria à toa.
         let categoriaItem = item.categoria
         const categoriaPlanilha = indiceCategorias[normalizarCodigoInterno(dados.codigoSku)]
-        if (categoriaPlanilha && categoriaPlanilha !== categoriaItem) {
+        // Categoria escolhida à mão pelo admin nunca é sobrescrita pela
+        // planilha automaticamente — só muda se o admin trocar de novo.
+        if (!item.categoriaManual && categoriaPlanilha && categoriaPlanilha !== categoriaItem) {
           categoriaItem = categoriaPlanilha
           try {
             const fotoAtual = await env.FOTOS.getWithMetadata(item.codigo, 'arrayBuffer')
@@ -1563,11 +1633,12 @@ async function preAquecerCatalogoLote(env) {
 
 const estoqueTotal = estoque.reduce((soma, i) => soma + (i.pares || 0), 0)
 
-if (estoqueTotal === 0) {
-  erros.push({ codigo: item.codigo, motivo: 'sem estoque' })
-  return null
-}
-
+// IMPORTANTE: estoqueTotal === 0 NÃO é descartado aqui — precisa ficar
+// gravado no lote pra o admin conseguir ver "isso esgotou" (aba
+// Esgotados). Quem tira o produto zerado da vitrine pública é o filtro
+// em handleCatalogoPronto, não aqui. Antes desta correção, um produto
+// zerado virava "return null" (igual erro de verdade) e essa informação
+// se perdia — o admin nunca sabia quais produtos tinham esgotado.
 return {
   codigo: item.codigo,
   categoria: categoriaItem,
@@ -1653,6 +1724,36 @@ async function handleCatalogoPronto(env, ctx) {
   return jsonResponse({ produtos: produtosComEstoque }, 200, {
     'Cache-Control': 'public, max-age=120'
   })
+}
+
+// Só pro painel admin: mesma leitura dos lotes do catálogo que
+// handleCatalogoPronto faz, mas SEM filtrar os produtos com estoque
+// zerado — é exatamente esse filtro que faz esses produtos "desaparecerem"
+// pro cliente final, mas o admin precisa enxergar o zero pra saber o que
+// esgotou (aba "Esgotados"). Sem esse endpoint, essa informação nunca
+// chegava no painel: o admin só tinha acesso ao /api/catalogo público, que
+// já vem sem os produtos zerados — não porque eles "sumiam", mas porque
+// nunca apareciam ali pra começo de conversa.
+async function handleAdminEstoqueCadastrados(request, env) {
+  if (!autenticado(request, env)) {
+    return jsonResponse({ error: 'Senha incorreta.' }, 401)
+  }
+
+  const indiceBruto = await env.FOTOS.get(CATALOGO_CACHE_CHAVE)
+  const totalLotes = indiceBruto ? JSON.parse(indiceBruto).totalLotes || 0 : 0
+
+  const lotes = totalLotes
+    ? await Promise.all(
+        Array.from({ length: totalLotes }, (_, i) => env.FOTOS.get(`${CATALOGO_LOTE_PREFIXO}${i}`))
+      )
+    : []
+
+  const produtos = lotes.flatMap((l) => (l ? JSON.parse(l) : []))
+
+  const estoques = {}
+  for (const p of produtos) estoques[p.codigo] = p.estoqueTotal
+
+  return jsonResponse({ estoques })
 }
 
 async function preAquecerCatalogoAgendado(env) {

@@ -4,10 +4,13 @@ import { ehFavorito, alternarFavorito, contarFavoritos } from '../utils/favorito
 import { estaNoCarrinho, adicionarAoCarrinho, contarCarrinho } from '../utils/carrinho.js'
 import { voarParaCarrinho, dispararToastCarrinho } from '../utils/carrinhoUI.js'
 import { limparNomeProduto } from '../utils/nomeProduto.js'
+import { CATEGORIAS_PRODUTO } from '../utils/categorias.js'
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
 const MAX_PARCELAS = 10
-const CATEGORIAS = ['Unissex', 'Casual Feminino', 'Casual Masculino', 'Infantil Feminino', 'Infantil Masculino', 'Esportivo Feminino', 'Esportivo Masculino', 'Corrida Feminino', 'Corrida Masculino', 'Chuteira', 'Promoção']
+// "Promoção" só existe aqui (filtro calculado, não uma categoria gravada
+// no produto) — ver comentário em utils/categorias.js.
+const CATEGORIAS = [...CATEGORIAS_PRODUTO, 'Promoção']
 
 const PALAVRAS_NAO_MARCA = new Set([
   'CASUAL', 'CORRIDA', 'ESPORTIVO', 'CONFORTO', 'SOCIAL', 'INFANTIL'

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
+import { CATEGORIAS_PRODUTO } from '../utils/categorias.js'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 
@@ -99,6 +100,9 @@ function PainelFotos({ senha }) {
   const [selecionados, setSelecionados] = useState(new Set())
   const [aplicandoEmMassa, setAplicandoEmMassa] = useState(false)
   const [statusEmMassa, setStatusEmMassa] = useState(null)
+  const [categoriaEscolhidaEmMassa, setCategoriaEscolhidaEmMassa] = useState('')
+  const [aplicandoCategoria, setAplicandoCategoria] = useState(false)
+  const [statusCategoriaEmMassa, setStatusCategoriaEmMassa] = useState(null)
   const [limiteExibicao, setLimiteExibicao] = useState(50)
   const [abaAtiva, setAbaAtiva] = useState('cadastradas')
   const [estoquePorCodigo, setEstoquePorCodigo] = useState({})
@@ -141,16 +145,20 @@ function PainelFotos({ senha }) {
     carregarVendedores()
   }, [carregarVendedores])
 
+  // Usa o endpoint de admin (não o /api/catalogo público) porque esse
+  // último já vem SEM os produtos de estoque zerado — é assim que a
+  // vitrine funciona, mas isso escondia do admin justamente os produtos
+  // que esgotaram. O endpoint de admin traz o estoque real, incluindo 0.
   const carregarEstoques = useCallback(async () => {
     try {
-      const resp = await fetch('/api/catalogo')
+      const resp = await fetch('/api/admin/estoque-cadastrados', {
+        headers: { 'X-Admin-Password': senha }
+      })
       const data = await resp.json()
-      const mapa = {}
-      for (const p of data.produtos || []) mapa[p.codigo] = p.estoqueTotal
-      setEstoquePorCodigo(mapa)
+      setEstoquePorCodigo(data.estoques || {})
     } catch {
     }
-  }, [])
+  }, [senha])
 
   useEffect(() => {
     carregarEstoques()
@@ -301,18 +309,19 @@ function PainelFotos({ senha }) {
   // qualquer caixa), vira "Chuteira" mesmo que a Linha diga outra coisa
   // (ex: "ESPORTE") — mais robusto que confiar só no cadastro da Mersan.
   // Sem esse sinal no nome, cai pra Chuteira mesmo assim se a Linha for
-  // "FUTEBOL". Nos dois casos, independente de gênero ou faixa etária —
-  // igual à Unisex, pra nenhuma chuteira ficar de fora só por causa de
-  // gênero ausente/errado na planilha.
+  // "FUTEBOL". Nos dois casos, independente de gênero ou faixa etária.
   //
-  // Unisex é categoria própria (não duplica mais em Masculino + Feminino):
-  // qualquer item com gênero UNISEX/UNISSEX vira só "Unissex", independente
-  // de linha ou faixa etária.
+  // Taxonomia atual (só estas 7 categorias — sem Unissex e sem Corrida,
+  // por decisão do negócio): Feminino, Masculino, Esportivo Feminino,
+  // Esportivo Masculino, Chuteira, Infantil Feminino, Infantil Masculino.
+  // Genero UNISEX/UNISSEX não tem categoria própria mais — fica sem
+  // categoria (mesmo comportamento de quando o gênero vem vazio/inválido).
+  // Itens com Linha "CORRIDA" caem no rótulo simples (Feminino/Masculino),
+  // igual a qualquer outro item sem linha especial.
   //
-  // Para os demais (Masculino/Feminino), ordem de prioridade da linha (da
-  // mais alta pra mais baixa): Corrida (linha "CORRIDA") > Infantil (faixa
-  // "INFANTIL") > Esportivo (linha "ESPORTE") > Casual (nenhuma das
-  // anteriores — era exibido "nu", sem rótulo de linha; agora é explícito).
+  // Para Masculino/Feminino, ordem de prioridade (da mais alta pra mais
+  // baixa): Infantil (faixa "INFANTIL") > Esportivo (linha "ESPORTE") >
+  // rótulo simples (nenhuma das anteriores).
   function calcularCategoriasPlanilha(descricao, faixaEtaria, genero, linha) {
     const descricaoNormalizada = (descricao || '').toUpperCase()
     const linhaNormalizada = (linha || '').trim().toUpperCase()
@@ -322,23 +331,17 @@ function PainelFotos({ senha }) {
 
     const generoNormalizado = (genero || '').trim().toUpperCase()
 
-    if (generoNormalizado === 'UNISEX' || generoNormalizado === 'UNISSEX') {
-      return ['Unissex']
-    }
-
     if (generoNormalizado !== 'MASCULINO' && generoNormalizado !== 'FEMININO') {
       return []
     }
 
-    const corrida = linhaNormalizada === 'CORRIDA'
     const infantil = (faixaEtaria || '').trim().toUpperCase() === 'INFANTIL'
     const esportivo = linhaNormalizada === 'ESPORTE'
     const rotulo = generoNormalizado === 'MASCULINO' ? 'Masculino' : 'Feminino'
 
-    if (corrida) return [`Corrida ${rotulo}`]
     if (infantil) return [`Infantil ${rotulo}`]
     if (esportivo) return [`Esportivo ${rotulo}`]
-    return [`Casual ${rotulo}`]
+    return [rotulo]
   }
 
   // Parser simples de CSV, com suporte a campos entre aspas (caso a
@@ -444,9 +447,10 @@ function PainelFotos({ senha }) {
         setStatusPlanilha({ tipo: 'erro', texto: data.error || 'Falha ao enviar a planilha.' })
       } else {
         const atualizados = data.recalculo?.atualizados ?? 0
+        const protegidos = data.recalculo?.protegidosPorCategoriaManual ?? 0
         setStatusPlanilha({
           tipo: 'sucesso',
-          texto: `Planilha salva: ${data.totalCodigos} códigos. Categoria já reaplicada nos produtos cadastrados (${atualizados} atualizados agora).`
+          texto: `Planilha salva: ${data.totalCodigos} códigos. Categoria já reaplicada nos produtos cadastrados (${atualizados} atualizados agora, ${protegidos} protegidos por categoria manual 🔒).`
         })
       }
     } catch {
@@ -470,7 +474,7 @@ function PainelFotos({ senha }) {
       } else {
         setStatusRecalculo({
           tipo: 'sucesso',
-          texto: `${data.atualizados} de ${data.totalFotos} produtos atualizados (${data.encontradosNaPlanilha} encontrados na planilha).`
+          texto: `${data.atualizados} de ${data.totalFotos} produtos atualizados (${data.encontradosNaPlanilha} encontrados na planilha, ${data.protegidosPorCategoriaManual || 0} protegidos por categoria manual 🔒).`
         })
         carregarLista()
       }
@@ -631,6 +635,39 @@ function PainelFotos({ senha }) {
     }
   }
 
+  async function handleAplicarCategoriaEmMassa() {
+    if (selecionados.size === 0 || !categoriaEscolhidaEmMassa) return
+    setAplicandoCategoria(true)
+    setStatusCategoriaEmMassa(null)
+    try {
+      const codigos = Array.from(selecionados)
+      const resp = await fetch('/api/admin/categoria-manual', {
+        method: 'POST',
+        headers: {
+          'X-Admin-Password': senha,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ codigos, categoria: categoriaEscolhidaEmMassa })
+      })
+      const data = await resp.json()
+      if (!resp.ok) {
+        setStatusCategoriaEmMassa({ tipo: 'erro', texto: data.error || 'Falha ao aplicar categoria.' })
+      } else {
+        setStatusCategoriaEmMassa({
+          tipo: 'sucesso',
+          texto: `${data.atualizados} produtos atualizados para "${categoriaEscolhidaEmMassa}". Essa categoria fica protegida e não será sobrescrita por planilhas futuras.`
+        })
+        setSelecionados(new Set())
+        setCategoriaEscolhidaEmMassa('')
+        carregarLista()
+      }
+    } catch {
+      setStatusCategoriaEmMassa({ tipo: 'erro', texto: 'Não foi possível conectar. Tente novamente.' })
+    } finally {
+      setAplicandoCategoria(false)
+    }
+  }
+
   async function handleExcluirManual() {
     const codigoFoto = codigoExcluirManual.trim()
     if (!codigoFoto) return
@@ -710,6 +747,9 @@ function PainelFotos({ senha }) {
 
           <p style={styles.vazio}>
             A categoria é definida automaticamente pela planilha de gêneros (veja abaixo), a partir do SKU do produto.
+            Se quiser escolher a categoria de um ou mais produtos à mão, abra a lista abaixo, marque os produtos e use
+            "Categoria dos selecionados" — categorias escolhidas assim ficam marcadas com 🔒 e não são mais alteradas
+            pela planilha.
           </p>
 
           {preview && <img src={preview} alt="Pré-visualização" style={styles.preview} />}
@@ -805,6 +845,36 @@ function PainelFotos({ senha }) {
 
           {selecionados.size > 0 && (
             <div style={styles.barraAcoesEmMassa}>
+              <label style={styles.label}>
+                Categoria dos {selecionados.size} selecionados
+                <div style={styles.linhaCodigo}>
+                  <select
+                    value={categoriaEscolhidaEmMassa}
+                    onChange={(e) => setCategoriaEscolhidaEmMassa(e.target.value)}
+                    style={{ ...styles.input, flex: 1 }}
+                  >
+                    <option value="">Escolha a categoria…</option>
+                    {CATEGORIAS_PRODUTO.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleAplicarCategoriaEmMassa}
+                    style={styles.botao}
+                    disabled={aplicandoCategoria || !categoriaEscolhidaEmMassa}
+                  >
+                    {aplicandoCategoria ? 'Aplicando…' : 'Aplicar'}
+                  </button>
+                </div>
+              </label>
+              <p style={styles.vazio}>
+                Categoria aplicada aqui fica protegida: planilhas novas e "Recalcular categorias" não vão sobrescrever esses produtos.
+              </p>
+              {statusCategoriaEmMassa && (
+                <p style={statusCategoriaEmMassa.tipo === 'erro' ? styles.erro : styles.sucesso}>{statusCategoriaEmMassa.texto}</p>
+              )}
+
               <button
                 type="button"
                 onClick={handleExcluirEmMassa}
@@ -855,6 +925,7 @@ function PainelFotos({ senha }) {
                     <span style={styles.codigoCompacto}>{f.codigo}</span>
                     <span style={styles.metaCompacta}>
                       {f.categoria || 'Sem categoria'}
+                      {f.categoriaManual ? ' 🔒' : ''}
                       {f.tamanho != null && ` • ${Math.round(f.tamanho / 1024)}KB`}
                       {f.tamanho > 400 * 1024 ? ' ⚠️' : ''}
                     </span>
