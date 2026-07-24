@@ -4,10 +4,19 @@ import { listarCarrinho, removerDoCarrinho, definirTamanho } from '../utils/carr
 import { limparNomeProduto } from '../utils/nomeProduto.js'
 import { corVendedor, ordenarVendedoresPorHora } from '../utils/vendedores.js'
 import ModalConfirmarEnvioUnico from '../components/ModalConfirmarEnvioUnico.jsx'
+import AvisoFlutuante from '../components/AvisoFlutuante.jsx'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
 const MAX_PARCELAS = 10
+
+// Junta uma lista em texto natural: ["a"] -> "a"; ["a","b"] -> "a e b";
+// ["a","b","c"] -> "a, b e c".
+function juntarComE(itens) {
+  if (itens.length === 0) return ''
+  if (itens.length === 1) return itens[0]
+  return `${itens.slice(0, -1).join(', ')} e ${itens[itens.length - 1]}`
+}
 
 export default function Carrinho() {
   const navigate = useNavigate()
@@ -19,6 +28,7 @@ export default function Carrinho() {
   const [vendedorEscolhido, setVendedorEscolhido] = useState(null)
   const [parcelasEscolhidas, setParcelasEscolhidas] = useState('')
   const [modalEnvioUnicoAberto, setModalEnvioUnicoAberto] = useState(false)
+  const [avisoPendencia, setAvisoPendencia] = useState(null)
 
   useEffect(() => {
     function atualizar() {
@@ -95,11 +105,28 @@ export default function Carrinho() {
     window.location.href = `/ir-vendedor-carrinho?${params.toString()}`
   }
 
-  // Com só 1 item no carrinho, o envio é, na prática, igual ao de mandar
-  // um produto avulso — vale a mesma confirmação pra reforçar que dá pra
-  // continuar comprando antes de fechar. Com 2+ itens, envia direto,
-  // exatamente como já funcionava.
+  // Antes o botão só ficava desabilitado, sem dizer por quê. Agora ele
+  // sempre reage ao clique: se faltar algo, mostra exatamente o que
+  // falta (inclusive quantos itens estão sem tamanho).
   function handleFinalizarClick() {
+    const faltando = []
+    const semTamanho = itens.filter((i) => !i.tamanho).length
+    if (semTamanho === 1) faltando.push('o tamanho de 1 produto')
+    else if (semTamanho > 1) faltando.push(`o tamanho de ${semTamanho} produtos`)
+    if (!vendedorEscolhido) faltando.push('o vendedor')
+    if (!parcelasEscolhidas) faltando.push('o parcelamento')
+
+    if (faltando.length > 0) {
+      setAvisoPendencia(`Escolha ${juntarComE(faltando)} para continuar.`)
+      return
+    }
+
+    setAvisoPendencia(null)
+
+    // Com só 1 item no carrinho, o envio é, na prática, igual ao de mandar
+    // um produto avulso — vale a mesma confirmação pra reforçar que dá pra
+    // continuar comprando antes de fechar. Com 2+ itens, envia direto,
+    // exatamente como já funcionava.
     if (itens.length === 1) {
       setModalEnvioUnicoAberto(true)
     } else {
@@ -223,14 +250,15 @@ export default function Carrinho() {
 
         {itens.length > 0 && (
           <button
-            disabled={!podeFinalizar}
             onClick={handleFinalizarClick}
-            style={{ ...styles.botaoFinalizar, opacity: podeFinalizar ? 1 : 0.5 }}
+            style={{ ...styles.botaoFinalizar, opacity: podeFinalizar ? 1 : 0.6 }}
           >
             Finalizar pedido
           </button>
         )}
       </main>
+
+      <AvisoFlutuante mensagem={avisoPendencia} onFechar={() => setAvisoPendencia(null)} />
 
       <ModalConfirmarEnvioUnico
         aberto={modalEnvioUnicoAberto}

@@ -6,10 +6,19 @@ import { corVendedor, ordenarVendedoresPorHora } from '../utils/vendedores.js'
 import { adicionarAoCarrinho, estaNoCarrinho } from '../utils/carrinho.js'
 import { voarParaCarrinho, dispararToastCarrinho } from '../utils/carrinhoUI.js'
 import ModalConfirmarEnvioUnico from '../components/ModalConfirmarEnvioUnico.jsx'
+import AvisoFlutuante from '../components/AvisoFlutuante.jsx'
 
 const IMAGEM_PADRAO = '/icons/icon-512.svg'
 const PARCELA_MINIMA = 29.99
 const MAX_PARCELAS = 10
+
+// Junta uma lista em texto natural: ["a"] -> "a"; ["a","b"] -> "a e b";
+// ["a","b","c"] -> "a, b e c".
+function juntarComE(itens) {
+  if (itens.length === 0) return ''
+  if (itens.length === 1) return itens[0]
+  return `${itens.slice(0, -1).join(', ')} e ${itens[itens.length - 1]}`
+}
 
 const PALAVRAS_NAO_MARCA = new Set([
   'CASUAL', 'CORRIDA', 'ESPORTIVO', 'CONFORTO', 'SOCIAL', 'INFANTIL'
@@ -77,6 +86,7 @@ export default function Produto() {
 
   const [noCarrinho, setNoCarrinho] = useState(false)
   const [modalEnvioUnicoAberto, setModalEnvioUnicoAberto] = useState(false)
+  const [avisoPendencia, setAvisoPendencia] = useState(null)
 
   // Reflete se ESTE código específico (a cor/variante sendo exibida agora)
   // já está no carrinho — troca de cor deve atualizar esse estado também.
@@ -272,6 +282,24 @@ export default function Produto() {
 
   const marca = produto ? extrairMarca(produto.nome) : null
   const nomeExibido = produto ? limparNomeProduto(produto.nome) : ''
+
+  // Antes o botão só ficava desabilitado, sem dizer por quê. Agora ele
+  // sempre reage ao clique: se faltar algo, mostra exatamente o que
+  // falta; só abre a confirmação de envio quando estiver tudo pronto.
+  function handleClickFalarComVendedor() {
+    const faltando = []
+    if (!tamanhoEscolhido) faltando.push('o tamanho')
+    if (!parcelasEscolhidas) faltando.push('o parcelamento')
+    if (!vendedorEscolhido) faltando.push('o vendedor')
+
+    if (faltando.length > 0) {
+      setAvisoPendencia(`Escolha ${juntarComE(faltando)} para continuar.`)
+      return
+    }
+
+    setAvisoPendencia(null)
+    setModalEnvioUnicoAberto(true)
+  }
 
   return (
     <main style={styles.pagina}>
@@ -480,17 +508,16 @@ export default function Produto() {
             >
               {noCarrinho ? '✅ Adicionado ao carrinho' : '🛒 Adicionar ao carrinho'}
             </button>
-            {linkPedidoPronto ? (
-              <button onClick={() => setModalEnvioUnicoAberto(true)} style={styles.botaoWhatsApp}>
-                <IconeWhatsApp />
-                FALAR COM O VENDEDOR
-              </button>
-            ) : (
-              <button disabled style={styles.botaoWhatsAppDesabilitado}>
-                Falar com o vendedor no WhatsApp
-              </button>
-            )}
+            <button
+              onClick={handleClickFalarComVendedor}
+              style={linkPedidoPronto ? styles.botaoWhatsApp : styles.botaoWhatsAppDesabilitado}
+            >
+              <IconeWhatsApp />
+              FALAR COM O VENDEDOR
+            </button>
           </div>
+
+          <AvisoFlutuante mensagem={avisoPendencia} onFechar={() => setAvisoPendencia(null)} />
 
           <ModalConfirmarEnvioUnico
             aberto={modalEnvioUnicoAberto}
@@ -867,16 +894,20 @@ const styles = {
     textDecoration: 'none'
   },
   botaoWhatsAppDesabilitado: {
-    display: 'block',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     width: '100%',
+    gap: '10px',
     textAlign: 'center',
     padding: '17px',
     fontSize: '16px',
     fontWeight: 800,
+    letterSpacing: '0.01em',
     color: '#b3b3ba',
     background: '#f0f0f1',
     border: 'none',
     borderRadius: '999px',
-    cursor: 'not-allowed'
+    cursor: 'pointer'
   }
 }
