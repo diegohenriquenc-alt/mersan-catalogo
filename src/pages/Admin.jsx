@@ -315,17 +315,23 @@ function PainelFotos({ senha }) {
   // Sem esse sinal no nome, cai pra Chuteira mesmo assim se a Linha for
   // "FUTEBOL". Nos dois casos, independente de gênero ou faixa etária.
   //
-  // Taxonomia atual (só estas 7 categorias — sem Unissex e sem Corrida,
-  // por decisão do negócio): Feminino, Masculino, Esportivo Feminino,
-  // Esportivo Masculino, Chuteira, Infantil Feminino, Infantil Masculino.
-  // Genero UNISEX/UNISSEX não tem categoria própria mais — fica sem
-  // categoria (mesmo comportamento de quando o gênero vem vazio/inválido).
-  // Itens com Linha "CORRIDA" caem no rótulo simples (Feminino/Masculino),
-  // igual a qualquer outro item sem linha especial.
+  // Taxonomia atual (só estas 7 categorias — sem Corrida como categoria
+  // própria, por decisão do negócio): Feminino, Masculino, Esportivo
+  // Feminino, Esportivo Masculino, Chuteira, Infantil Feminino, Infantil
+  // Masculino. Itens com Linha "CORRIDA" caem no rótulo simples
+  // (Feminino/Masculino), igual a qualquer outro item sem linha especial.
   //
-  // Para Masculino/Feminino, ordem de prioridade (da mais alta pra mais
-  // baixa): Infantil (faixa "INFANTIL") > Esportivo (linha "ESPORTE") >
-  // rótulo simples (nenhuma das anteriores).
+  // Gênero UNISEX/UNISSEX entra nas DUAS categorias ao mesmo tempo
+  // (Masculino E Feminino, ou Esportivo Masculino E Esportivo Feminino,
+  // etc, seguindo a mesma prioridade de Infantil/Esportivo abaixo) — não
+  // existe categoria "Unissex" própria; o produto some da vitrine em
+  // nenhuma das duas, aparece nas duas. Confirmado contra uma planilha
+  // real de 1039 produtos: sem essa regra, 132 ficavam sem categoria
+  // nenhuma (exatamente os UNISEX); com ela, zero ficam de fora.
+  //
+  // Para Masculino/Feminino/Unisex, ordem de prioridade (da mais alta pra
+  // mais baixa): Infantil (faixa "INFANTIL") > Esportivo (linha "ESPORTE")
+  // > rótulo simples (nenhuma das anteriores).
   function calcularCategoriasPlanilha(descricao, faixaEtaria, genero, linha) {
     const descricaoNormalizada = (descricao || '').toUpperCase()
     const linhaNormalizada = (linha || '').trim().toUpperCase()
@@ -334,18 +340,21 @@ function PainelFotos({ senha }) {
     }
 
     const generoNormalizado = (genero || '').trim().toUpperCase()
+    const ehUnisex = generoNormalizado === 'UNISEX' || generoNormalizado === 'UNISSEX'
 
-    if (generoNormalizado !== 'MASCULINO' && generoNormalizado !== 'FEMININO') {
+    if (!ehUnisex && generoNormalizado !== 'MASCULINO' && generoNormalizado !== 'FEMININO') {
       return []
     }
 
     const infantil = (faixaEtaria || '').trim().toUpperCase() === 'INFANTIL'
     const esportivo = linhaNormalizada === 'ESPORTE'
-    const rotulo = generoNormalizado === 'MASCULINO' ? 'Masculino' : 'Feminino'
+    const rotulos = ehUnisex
+      ? ['Masculino', 'Feminino']
+      : [generoNormalizado === 'MASCULINO' ? 'Masculino' : 'Feminino']
 
-    if (infantil) return [`Infantil ${rotulo}`]
-    if (esportivo) return [`Esportivo ${rotulo}`]
-    return [rotulo]
+    if (infantil) return rotulos.map((r) => `Infantil ${r}`)
+    if (esportivo) return rotulos.map((r) => `Esportivo ${r}`)
+    return rotulos
   }
 
   // Parser simples de CSV, com suporte a campos entre aspas (caso a
@@ -489,6 +498,23 @@ function PainelFotos({ senha }) {
     }
       }
 
+  // Depois de cadastrar uma foto nova, o Worker busca a categoria (e o
+  // estoque) na Mersan em segundo plano — leva só alguns segundos, mas
+  // a lista da tela já tinha sido recarregada ANTES disso terminar, e
+  // nada atualizava sozinho depois. Parecia lento, mas o processo em si
+  // já era rápido; só a tela que ficava "parada" até um recarregamento
+  // manual. Isso aqui busca a lista de novo mais algumas vezes nos
+  // segundos seguintes, pra categoria/estoque aparecerem sozinhos.
+  function reatualizarListaAposCadastro() {
+    const atrasosMs = [2500, 5000, 9000, 15000]
+    atrasosMs.forEach((ms) => {
+      setTimeout(() => {
+        carregarLista()
+        carregarEstoques()
+      }, ms)
+    })
+  }
+
   async function handleEnviar(e) {
     e.preventDefault()
     if (!codigo || !arquivo) return
@@ -514,12 +540,16 @@ function PainelFotos({ senha }) {
       if (!resp.ok) {
         setStatus({ tipo: 'erro', texto: data.error || 'Falha ao enviar.' })
       } else {
-        setStatus({ tipo: 'sucesso', texto: `Foto salva para "${data.codigo}".` })
+        setStatus({
+          tipo: 'sucesso',
+          texto: `Foto salva para "${data.codigo}". Categoria e estoque são preenchidos automaticamente em alguns segundos — a lista abaixo atualiza sozinha.`
+        })
         setCodigo('')
         setArquivo(null)
         setPreview(null)
         setEditando(null)
         carregarLista()
+        reatualizarListaAposCadastro()
       }
     } catch {
       setStatus({ tipo: 'erro', texto: 'Não foi possível conectar.' })
