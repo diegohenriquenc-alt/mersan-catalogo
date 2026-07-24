@@ -1734,6 +1734,12 @@ async function handleCatalogoPronto(env, ctx) {
 // chegava no painel: o admin só tinha acesso ao /api/catalogo público, que
 // já vem sem os produtos zerados — não porque eles "sumiam", mas porque
 // nunca apareciam ali pra começo de conversa.
+//
+// Também devolve o nome de cada produto (nomes), pra dar pra buscar no
+// admin por palavra (ex: "chuteira") mesmo em produtos que ainda não
+// foram categorizados como Chuteira — o admin só conhece o código de
+// barras de cada foto, nunca o nome, então sem isso a busca só acharia
+// pela categoria já salva, não pelo nome de verdade do produto.
 async function handleAdminEstoqueCadastrados(request, env) {
   if (!autenticado(request, env)) {
     return jsonResponse({ error: 'Senha incorreta.' }, 401)
@@ -1751,9 +1757,13 @@ async function handleAdminEstoqueCadastrados(request, env) {
   const produtos = lotes.flatMap((l) => (l ? JSON.parse(l) : []))
 
   const estoques = {}
-  for (const p of produtos) estoques[p.codigo] = p.estoqueTotal
+  const nomes = {}
+  for (const p of produtos) {
+    estoques[p.codigo] = p.estoqueTotal
+    if (p.nome) nomes[p.codigo] = p.nome
+  }
 
-  return jsonResponse({ estoques })
+  return jsonResponse({ estoques, nomes })
 }
 
 async function preAquecerCatalogoAgendado(env) {

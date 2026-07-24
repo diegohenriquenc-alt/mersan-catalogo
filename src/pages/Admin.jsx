@@ -106,6 +106,8 @@ function PainelFotos({ senha }) {
   const [limiteExibicao, setLimiteExibicao] = useState(50)
   const [abaAtiva, setAbaAtiva] = useState('cadastradas')
   const [estoquePorCodigo, setEstoquePorCodigo] = useState({})
+  const [nomePorCodigo, setNomePorCodigo] = useState({})
+  const [termoBusca, setTermoBusca] = useState('')
   const [listaAberta, setListaAberta] = useState(false)
   const [codigoExcluirManual, setCodigoExcluirManual] = useState('')
   const [excluindoManual, setExcluindoManual] = useState(false)
@@ -156,6 +158,7 @@ function PainelFotos({ senha }) {
       })
       const data = await resp.json()
       setEstoquePorCodigo(data.estoques || {})
+      setNomePorCodigo(data.nomes || {})
     } catch {
     }
   }, [senha])
@@ -698,8 +701,30 @@ function PainelFotos({ senha }) {
 
   const fotosEsgotadas = fotos.filter((f) => estoquePorCodigo[f.codigo] === 0)
   const fotosNormais = fotos.filter((f) => estoquePorCodigo[f.codigo] !== 0)
-  const fotosExibidas = abaAtiva === 'esgotados' ? fotosEsgotadas : fotosNormais
-  const fotosParaMostrar = fotosExibidas.slice(0, limiteExibicao)
+
+  // Busca por código, nome (do catálogo já processado) ou categoria — ex:
+  // digitar "chuteira" acha tanto produtos já categorizados como Chuteira
+  // quanto produtos cujo NOME tem "chuteira" mas ainda não foram
+  // categorizados, que é justamente o caso de uso: achar tudo, selecionar
+  // tudo, aplicar a categoria em massa.
+  const termoBuscaNormalizado = termoBusca.trim().toLowerCase()
+  function correspondeABusca(f) {
+    if (!termoBuscaNormalizado) return true
+    const nome = (nomePorCodigo[f.codigo] || '').toLowerCase()
+    const categoria = (f.categoria || '').toLowerCase()
+    return (
+      f.codigo.toLowerCase().includes(termoBuscaNormalizado) ||
+      nome.includes(termoBuscaNormalizado) ||
+      categoria.includes(termoBuscaNormalizado)
+    )
+  }
+
+  const fotosEsgotadasFiltradas = fotosEsgotadas.filter(correspondeABusca)
+  const fotosNormaisFiltradas = fotosNormais.filter(correspondeABusca)
+  const fotosExibidas = abaAtiva === 'esgotados' ? fotosEsgotadasFiltradas : fotosNormaisFiltradas
+  // Buscando, mostra TODOS os resultados de uma vez (sem o limite de 50),
+  // pra "Selecionar todos os visíveis" selecionar de fato tudo que a busca achou.
+  const fotosParaMostrar = termoBuscaNormalizado ? fotosExibidas : fotosExibidas.slice(0, limiteExibicao)
 
   function selecionarTodosVisiveis() {
     setSelecionados(new Set(fotosParaMostrar.map((f) => f.codigo)))
@@ -808,22 +833,45 @@ function PainelFotos({ senha }) {
 
           {listaAberta && (
           <>
+          <div style={styles.buscaBox}>
+            <span style={styles.buscaIcone}>🔍</span>
+            <input
+              type="text"
+              value={termoBusca}
+              onChange={(e) => setTermoBusca(e.target.value)}
+              placeholder="Buscar por código, nome ou categoria (ex: chuteira)"
+              style={styles.buscaInput}
+            />
+            {termoBusca && (
+              <button type="button" onClick={() => setTermoBusca('')} style={styles.buscaLimpar} aria-label="Limpar busca">
+                ✕
+              </button>
+            )}
+          </div>
+
           <div style={styles.abas}>
             <button
               type="button"
               onClick={() => { setAbaAtiva('cadastradas'); limparSelecao() }}
               style={abaAtiva === 'cadastradas' ? styles.abaBotaoAtiva : styles.abaBotao}
             >
-              Fotos cadastradas ({fotosNormais.length})
+              Fotos cadastradas ({fotosNormaisFiltradas.length})
             </button>
             <button
               type="button"
               onClick={() => { setAbaAtiva('esgotados'); limparSelecao() }}
               style={abaAtiva === 'esgotados' ? styles.abaBotaoAtiva : styles.abaBotao}
             >
-              Esgotados ({fotosEsgotadas.length})
+              Esgotados ({fotosEsgotadasFiltradas.length})
             </button>
           </div>
+
+          {termoBuscaNormalizado && (
+            <p style={styles.vazio}>
+              Buscando por "{termoBusca.trim()}" — {fotosExibidas.length} encontrados nesta aba.
+              Use "Selecionar todos os visíveis" pra marcar todos de uma vez.
+            </p>
+          )}
 
           {abaAtiva === 'esgotados' && (
             <p style={styles.vazio}>
@@ -1487,5 +1535,35 @@ const styles = {
     border: '1px solid #ececec',
     borderRadius: '10px',
     cursor: 'pointer'
+  },
+  buscaBox: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '4px 14px',
+    marginBottom: '12px',
+    background: '#f7f7f8',
+    border: '1px solid #ececec',
+    borderRadius: '10px'
+  },
+  buscaIcone: {
+    fontSize: '15px',
+    flexShrink: 0
+  },
+  buscaInput: {
+    flex: 1,
+    padding: '12px 0',
+    fontSize: '15px',
+    border: 'none',
+    background: 'none',
+    outline: 'none'
+  },
+  buscaLimpar: {
+    background: 'none',
+    border: 'none',
+    color: '#6b6b6b',
+    fontSize: '14px',
+    cursor: 'pointer',
+    padding: '4px'
   }
     }
